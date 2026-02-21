@@ -28,8 +28,10 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const isAuthRoute = pathname === '/login' || pathname === '/signup'
   const isDashboard = pathname.startsWith('/dashboard')
+  const isListingsProtected =
+    pathname === '/listings/new' || /^\/listings\/[^/]+\/pay\/?$/.test(pathname)
 
-  if (isDashboard && !user) {
+  if ((isDashboard || isListingsProtected) && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     url.searchParams.set('redirectTo', pathname)

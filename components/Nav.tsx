@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { LogIn, LogOut, LayoutDashboard, User } from 'lucide-react'
+import { LogIn, LogOut, LayoutDashboard, User, PlusSquare } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 
@@ -34,6 +34,13 @@ export function Nav({ user }: { user: SupabaseUser | null }) {
               >
                 <LayoutDashboard className="h-4 w-4" />
                 Dashboard
+              </Link>
+              <Link
+                href="/listings/new"
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <PlusSquare className="h-4 w-4" />
+                Dodaj ogłoszenie
               </Link>
               <button
                 onClick={handleSignOut}

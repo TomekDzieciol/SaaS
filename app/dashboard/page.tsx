@@ -1,6 +1,9 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { UserProfile } from '@/components/UserProfile'
+import { MyListingsTable } from '@/components/MyListingsTable'
+import { PlusSquare } from 'lucide-react'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -12,6 +15,12 @@ export default async function DashboardPage() {
     redirect('/login')
   }
 
+  const { data: myListings } = await supabase
+    .from('listings')
+    .select('id, title, status, created_at, price')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
       <div className="mb-8">
@@ -21,7 +30,22 @@ export default async function DashboardPage() {
         <p className="mt-1 text-slate-600 dark:text-slate-400">
           Witaj w chronionej strefie aplikacji.
         </p>
+        <Link
+          href="/listings/new"
+          className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+        >
+          <PlusSquare className="h-4 w-4" />
+          Dodaj ogłoszenie
+        </Link>
       </div>
+
+      <section className="mb-10">
+        <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
+          Moje ogłoszenia
+        </h2>
+        <MyListingsTable listings={myListings ?? []} />
+      </section>
+
       <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white p-6 shadow-sm dark:bg-slate-800/50">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
           Twoje konto
