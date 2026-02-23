@@ -2,6 +2,40 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { MapPin, Phone, ArrowLeft, Camera } from 'lucide-react'
+import type { Metadata } from 'next'
+
+export async function generateMetadata({
+  params,
+}: {
+  params: { id: string }
+}): Promise<Metadata> {
+  const supabase = await createClient()
+  const { data: listing } = await supabase
+    .from('listings')
+    .select('title, description, price, location')
+    .eq('id', params.id)
+    .eq('status', 'active')
+    .single()
+
+  if (!listing) {
+    return { title: 'Ogłoszenie nie znalezione' }
+  }
+
+  const title = listing.title
+  const priceStr =
+    listing.price != null
+      ? ` ${Number(listing.price).toLocaleString('pl-PL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} zł`
+      : ''
+  const locationStr = listing.location ? ` – ${listing.location}` : ''
+  const description =
+    (listing.description?.slice(0, 155).trim() || listing.title) +
+    (listing.description && listing.description.length > 155 ? '…' : '')
+
+  return {
+    title: `${title}${priceStr}${locationStr}`,
+    description: description || undefined,
+  }
+}
 
 export default async function ListingDetailPage({
   params,
@@ -39,20 +73,39 @@ export default async function ListingDetailPage({
       </Link>
 
       <article className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 shadow-sm">
-        <div className="aspect-[16/10] bg-slate-100 dark:bg-slate-800">
-          {firstImageUrl ? (
-            <img
-              src={firstImageUrl}
-              alt=""
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-slate-400 dark:text-slate-500">
-              <Camera className="h-16 w-16" strokeWidth={1.25} />
-              <span className="text-sm font-medium">Brak zdjęcia</span>
+        {/* Galeria zdjęć */}
+        {imageUrls.length > 0 ? (
+          <div className="space-y-2">
+            <div className="aspect-[16/10] bg-slate-100 dark:bg-slate-800">
+              <img
+                src={imageUrls[0]}
+                alt=""
+                className="h-full w-full object-cover"
+              />
             </div>
-          )}
-        </div>
+            {imageUrls.length > 1 && (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {imageUrls.slice(1, 6).map((url, i) => (
+                  <div
+                    key={i}
+                    className="aspect-[4/3] overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800"
+                  >
+                    <img
+                      src={url}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="aspect-[16/10] flex flex-col items-center justify-center gap-3 bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500">
+            <Camera className="h-16 w-16" strokeWidth={1.25} />
+            <span className="text-sm font-medium">Brak zdjęcia</span>
+          </div>
+        )}
 
         <div className="p-6 sm:p-8">
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white sm:text-3xl">

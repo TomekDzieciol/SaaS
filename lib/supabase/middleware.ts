@@ -30,6 +30,16 @@ export async function updateSession(request: NextRequest) {
   const isDashboard = pathname.startsWith('/dashboard')
   const isListingsProtected =
     pathname === '/listings/new' || /^\/listings\/[^/]+\/pay\/?$/.test(pathname)
+  const isAdmin = pathname.startsWith('/admin')
+  // Strony publiczne (bez sesji): /, /listings/[id] – nie przekierowujemy
+  // Sprawdzenie e-maila admina tylko na stronie (page.tsx) – NEXT_PUBLIC_ADMIN_EMAIL z .trim().toLowerCase()
+
+  if (isAdmin && !user) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.searchParams.set('redirectTo', pathname)
+    return NextResponse.redirect(url)
+  }
 
   if ((isDashboard || isListingsProtected) && !user) {
     const url = request.nextUrl.clone()
