@@ -12,6 +12,12 @@ export default async function NewListingPage() {
     redirect('/login?redirectTo=/listings/new')
   }
 
+  const { data: categories } = await supabase
+    .from('categories')
+    .select('id, name, parent_id')
+    .order('name')
+  const flat = (categories ?? []).map((c) => ({ id: c.id, name: c.name, parent_id: c.parent_id }))
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
       <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
@@ -20,7 +26,7 @@ export default async function NewListingPage() {
       <p className="mt-1 text-slate-600 dark:text-slate-400">
         Wypełnij dane. Po zapisie przejdziesz do wyboru pakietu promowania.
       </p>
-      <NewListingForm userId={user.id} />
+      <NewListingForm userId={user.id} categories={flat} />
     </div>
   )
 }
