@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import { addCategory } from '@/app/admin/categories/actions'
 import { Loader2 } from 'lucide-react'
 
-type CategoryRow = { id: string; name: string; icon_name: string | null; parent_id: string | null }
+type CategoryRow = { id: string; name: string; icon_name?: string | null; parent_id: string | null; is_free?: boolean }
 
 export function AdminCategoriesForm({ categories }: { categories: CategoryRow[] }) {
   const [loading, setLoading] = useState(false)

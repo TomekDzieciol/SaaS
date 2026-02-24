@@ -36,10 +36,25 @@ export async function createListing(input: NewListingInput) {
   if (priceRaw !== '' && (Number.isNaN(priceNum) || priceNum! < 0)) {
     return { error: 'Cena musi być poprawną liczbą nieujemną.' }
   }
-  if (priceRaw !== '' && priceNum !== null && priceNum <= 0) {
-    return { error: 'Cena musi być większa od zera.' }
+  let finalPrice: number | null = priceRaw === '' ? null : priceNum
+
+  const categoryId = input.category_id?.trim() || null
+  let categoryIsFree = false
+  if (categoryId) {
+    const { data: category } = await supabase
+      .from('categories')
+      .select('is_free')
+      .eq('id', categoryId)
+      .single()
+    categoryIsFree = category?.is_free ?? false
   }
-  const finalPrice = priceRaw === '' ? null : priceNum
+
+  if (!categoryIsFree && (finalPrice === null || finalPrice === 0)) {
+    return { error: 'W tej kategorii cena musi być większa od zera.' }
+  }
+  if (categoryIsFree && finalPrice === null) {
+    finalPrice = 0
+  }
 
   const images = (input.images ?? []).slice(0, 6)
   while (images.length < 6) {
@@ -54,7 +69,7 @@ export async function createListing(input: NewListingInput) {
       description: input.description.trim() || null,
       price: finalPrice,
       category: null,
-      category_id: input.category_id?.trim() || null,
+      category_id: categoryId,
       location: input.location.trim() || null,
       contact_phone: input.contact_phone.trim() || null,
       images,

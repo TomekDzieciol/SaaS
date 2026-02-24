@@ -43,3 +43,22 @@ export async function addCategory(formData: FormData) {
   revalidatePath('/admin/categories')
   return { success: true }
 }
+
+export async function updateCategoryIsFree(categoryId: string, isFree: boolean) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) return { error: 'Musisz być zalogowany.' }
+  if (!isAdminEmail(user.email ?? undefined)) return { error: 'Brak uprawnień.' }
+
+  const { error } = await supabase
+    .from('categories')
+    .update({ is_free: isFree })
+    .eq('id', categoryId)
+
+  if (error) return { error: error.message }
+  revalidatePath('/admin/categories')
+  return { success: true }
+}

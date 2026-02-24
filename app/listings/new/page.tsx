@@ -14,9 +14,14 @@ export default async function NewListingPage() {
 
   const { data: categories } = await supabase
     .from('categories')
-    .select('id, name, parent_id')
+    .select('id, name, parent_id, is_free')
     .order('name')
-  const flat = (categories ?? []).map((c) => ({ id: c.id, name: c.name, parent_id: c.parent_id }))
+  const flat = (categories ?? []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    parent_id: c.parent_id,
+    is_free: c.is_free ?? false,
+  }))
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">

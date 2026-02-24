@@ -10,7 +10,7 @@ import { ImagePlus, Loader2 } from 'lucide-react'
 const MAX_IMAGES = 6
 const BUCKET = 'listing-images'
 
-type CategoryRow = { id: string; name: string; parent_id: string | null }
+type CategoryRow = { id: string; name: string; parent_id: string | null; is_free: boolean }
 
 export function NewListingForm({ userId, categories }: { userId: string; categories: CategoryRow[] }) {
   const router = useRouter()
@@ -20,6 +20,9 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
   const [categoryId, setCategoryId] = useState<string>('')
   const [filters, setFilters] = useState<FilterWithOptions[]>([])
   const [priceDisplay, setPriceDisplay] = useState<string>('')
+
+  const selectedCategory = categories.find((c) => c.id === categoryId)
+  const selectedCategoryIsFree = selectedCategory?.is_free ?? false
 
   function formatPriceWithSpaces(value: string): string {
     const digits = value.replace(/\D/g, '')
@@ -42,6 +45,14 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
     })
     return () => { cancelled = true }
   }, [categoryId])
+
+  useEffect(() => {
+    if (selectedCategoryIsFree) {
+      setPriceDisplay('0')
+    } else {
+      setPriceDisplay('')
+    }
+  }, [selectedCategoryIsFree])
 
   function handleImageChange(index: number, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
@@ -74,6 +85,11 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
     })
 
     const priceCleaned = priceDisplay.replace(/\D/g, '')
+    if (!selectedCategoryIsFree && (priceCleaned === '' || priceCleaned === '0')) {
+      setError('W tej kategorii cena musi być większa od zera.')
+      setLoading(false)
+      return
+    }
     const result = await createListing({
       title: (formData.get('title') as string) ?? '',
       description: (formData.get('description') as string) ?? '',
@@ -194,14 +210,22 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
           name="price"
           type="text"
           inputMode="numeric"
-          placeholder="np. 150 000"
+          placeholder={selectedCategoryIsFree ? '' : 'np. 150 000'}
           value={priceDisplay}
           onChange={handlePriceChange}
-          className={inputClass}
+          disabled={selectedCategoryIsFree}
+          className={`${inputClass} ${selectedCategoryIsFree ? 'cursor-not-allowed bg-slate-100 opacity-90 dark:bg-slate-700/60 dark:opacity-90' : ''}`}
         />
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          Możesz wpisać np. 150 000 zł — spacje są dodawane automatycznie.
+          {selectedCategoryIsFree
+            ? 'Cena ustawiona na 0 zł (kategoria darmowa).'
+            : 'Możesz wpisać np. 150 000 zł — spacje są dodawane automatycznie.'}
         </p>
+        {selectedCategoryIsFree && (
+          <p className="mt-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+            W tej kategorii możesz wystawić przedmiot bezpłatnie.
+          </p>
+        )}
       </div>
 
       {filters.length > 0 && (
