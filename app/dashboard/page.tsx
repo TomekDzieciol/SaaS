@@ -1,11 +1,22 @@
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { UserProfile } from '@/components/UserProfile'
 import { MyListingsTable } from '@/components/MyListingsTable'
 import { PlusSquare } from 'lucide-react'
 
+export const dynamic = 'force-dynamic'
+
+function isAdminEmail(email: string | undefined): boolean {
+  const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL?.trim().toLowerCase()
+  if (!adminEmail) return false
+  return (email ?? '').trim().toLowerCase() === adminEmail
+}
+
 export default async function DashboardPage() {
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  console.log('LOG SERWERA - Długość klucza:', serviceKey ? serviceKey.length : 'BRAK')
+
   const supabase = await createClient()
   const {
     data: { user },
@@ -15,11 +26,42 @@ export default async function DashboardPage() {
     redirect('/login')
   }
 
-  const { data: myListings } = await supabase
-    .from('listings')
-    .select('id, title, status, created_at, price')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
+  const isAdmin = isAdminEmail(user.email ?? undefined)
+  console.log('Czy admin?', isAdmin)
+
+  let listings: { id: string; title: string; status: string; created_at: string; price: number | null; user_id: string }[] = []
+
+  if (isAdmin) {
+    try {
+      const adminClient = createAdminClient()
+      // Brak filtra .eq('user_id') – admin widzi wszystkie ogłoszenia (RLS omijane przez service role)
+      const { data, error } = await adminClient
+        .from('listings')
+        .select('id, title, status, created_at, price, user_id')
+        .order('created_at', { ascending: false })
+      if (error) {
+        console.error('Admin listings query error:', error)
+      }
+      listings = data ?? []
+    } catch (err) {
+      console.error('createAdminClient() lub zapytanie admina nie powiodło się:', err)
+      const { data } = await supabase
+        .from('listings')
+        .select('id, title, status, created_at, price, user_id')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+      listings = data ?? []
+    }
+  } else {
+    const { data } = await supabase
+      .from('listings')
+      .select('id, title, status, created_at, price, user_id')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+    listings = data ?? []
+  }
+
+  console.log('Liczba ogłoszeń:', listings.length)
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
@@ -41,9 +83,13 @@ export default async function DashboardPage() {
 
       <section className="mb-10">
         <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
-          Moje ogłoszenia
+          {isAdmin ? 'Wszystkie ogłoszenia' : 'Moje ogłoszenia'}
         </h2>
-        <MyListingsTable listings={myListings ?? []} />
+        <MyListingsTable
+          listings={listings}
+          currentUserId={user.id}
+          isAdmin={isAdmin}
+        />
       </section>
 
       <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white p-6 shadow-sm dark:bg-slate-800/50">

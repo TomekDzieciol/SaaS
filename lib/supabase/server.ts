@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
 export async function createClient() {
@@ -23,5 +24,19 @@ export async function createClient() {
         },
       },
     }
+  )
+}
+
+/** Klient z uprawnieniami service role – tylko na serwerze, np. do usuwania cudzych ogłoszeń przez admina. */
+export function createAdminClient() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!key) {
+    console.error('[createAdminClient] BRAK SUPABASE_SERVICE_ROLE_KEY w process.env – ustaw zmienną w .env.local')
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set')
+  }
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    key,
+    { auth: { persistSession: false } }
   )
 }

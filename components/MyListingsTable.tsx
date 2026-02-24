@@ -1,5 +1,10 @@
+'use client'
+
+import { useState } from 'react'
 import Link from 'next/link'
-import { ExternalLink } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ExternalLink, Trash2 } from 'lucide-react'
+import { deleteListing } from '@/app/listings/actions'
 
 const STATUS_LABELS: Record<string, string> = {
   pending_payment: 'Oczekuje na płatność',
@@ -21,9 +26,40 @@ export type ListingRow = {
   status: string
   created_at: string
   price: number | null
+  user_id: string
 }
 
-export function MyListingsTable({ listings }: { listings: ListingRow[] }) {
+export function MyListingsTable({
+  listings,
+  currentUserId,
+  isAdmin,
+}: {
+  listings: ListingRow[]
+  currentUserId: string
+  isAdmin: boolean
+}) {
+  const router = useRouter()
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleDelete(row: ListingRow) {
+    const canDelete = isAdmin || row.user_id === currentUserId
+    if (!canDelete) return
+    if (!window.confirm('Czy na pewno chcesz trwale usunąć to ogłoszenie?')) return
+
+    setError(null)
+    setDeletingId(row.id)
+
+    const result = await deleteListing(row.id)
+
+    setDeletingId(null)
+    if (result.error) {
+      setError(result.error)
+      return
+    }
+    router.refresh()
+  }
+
   if (listings.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/30 py-8 text-center text-slate-500 dark:text-slate-400">
@@ -34,6 +70,11 @@ export function MyListingsTable({ listings }: { listings: ListingRow[] }) {
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+      {error && (
+        <div className="border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
+          {error}
+        </div>
+      )}
       <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
         <thead className="bg-slate-50 dark:bg-slate-800/50">
           <tr>
@@ -49,51 +90,77 @@ export function MyListingsTable({ listings }: { listings: ListingRow[] }) {
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Data
             </th>
+            {isAdmin && (
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Użytkownik (ID)
+              </th>
+            )}
             <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Akcje
             </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200 dark:divide-slate-700 bg-white dark:bg-slate-800/30">
-          {listings.map((row) => (
-            <tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-              <td className="px-4 py-3">
-                <span className="font-medium text-slate-900 dark:text-white line-clamp-1 max-w-[200px] sm:max-w-none">
-                  {row.title}
-                </span>
-              </td>
-              <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-                {row.price != null
-                  ? `${Number(row.price).toLocaleString('pl-PL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} zł`
-                  : '–'}
-              </td>
-              <td className="px-4 py-3">
-                <span
-                  className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                    STATUS_STYLES[row.status] ?? 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
-                  }`}
-                >
-                  {STATUS_LABELS[row.status] ?? row.status}
-                </span>
-              </td>
-              <td className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
-                {new Date(row.created_at).toLocaleDateString('pl-PL')}
-              </td>
-              <td className="px-4 py-3 text-right">
-                {row.status === 'active' ? (
-                  <Link
-                    href={`/listings/${row.id}`}
-                    className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+          {listings.map((row) => {
+            const canDelete = isAdmin || row.user_id === currentUserId
+            const isDeleting = deletingId === row.id
+            return (
+              <tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td className="px-4 py-3">
+                  <span className="font-medium text-slate-900 dark:text-white line-clamp-1 max-w-[200px] sm:max-w-none">
+                    {row.title}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                  {row.price != null
+                    ? `${Number(row.price).toLocaleString('pl-PL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} zł`
+                    : '–'}
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      STATUS_STYLES[row.status] ?? 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                    }`}
                   >
-                    Zobacz
-                    <ExternalLink className="h-4 w-4" />
-                  </Link>
-                ) : (
-                  <span className="text-slate-400 dark:text-slate-500">–</span>
+                    {STATUS_LABELS[row.status] ?? row.status}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
+                  {new Date(row.created_at).toLocaleDateString('pl-PL')}
+                </td>
+                {isAdmin && (
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500 dark:text-slate-400" title={row.user_id}>
+                    {row.user_id.slice(0, 8)}…
+                  </td>
                 )}
-              </td>
-            </tr>
-          ))}
+                <td className="px-4 py-3 text-right">
+                  <span className="flex items-center justify-end gap-2">
+                    {row.status === 'active' && (
+                      <Link
+                        href={`/listings/${row.id}`}
+                        className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                      >
+                        Zobacz
+                        <ExternalLink className="h-4 w-4" />
+                      </Link>
+                    )}
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(row)}
+                        disabled={isDeleting}
+                        className="inline-flex items-center rounded p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400 disabled:opacity-50"
+                        title="Usuń ogłoszenie"
+                        aria-label="Usuń ogłoszenie"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </span>
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

@@ -1,7 +1,25 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+
+const LISTING_IMAGES_BUCKET = 'listing-images'
+
+function isAdminEmail(email: string | undefined): boolean {
+  const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL?.trim().toLowerCase()
+  if (!adminEmail) return false
+  return (email ?? '').trim().toLowerCase() === adminEmail
+}
+
+/** Wyciąga ścieżkę w bucketcie z publicznego URL Supabase Storage (np. userId/listingId/0.jpg). */
+function storagePathFromPublicUrl(url: string): string | null {
+  const needle = `/${LISTING_IMAGES_BUCKET}/`
+  const i = url.indexOf(needle)
+  if (i === -1) return null
+  const after = url.slice(i + needle.length)
+  const path = after.split('?')[0].trim()
+  return path.length > 0 ? path : null
+}
 
 export type FilterValueInput = {
   filter_id: string
@@ -43,10 +61,13 @@ export async function createListing(input: NewListingInput) {
   if (categoryId) {
     const { data: category } = await supabase
       .from('categories')
-      .select('is_free')
+      .select('is_free, is_active')
       .eq('id', categoryId)
       .single()
-    categoryIsFree = category?.is_free ?? false
+    if (!category || !category.is_active) {
+      return { error: 'Wybrana kategoria nie jest dostępna.' }
+    }
+    categoryIsFree = category.is_free ?? false
   }
 
   if (!categoryIsFree && (finalPrice === null || finalPrice === 0)) {
@@ -153,5 +174,62 @@ export async function updateListingImages(listingId: string, imageUrls: string[]
   revalidatePath('/')
   revalidatePath(`/listings/${listingId}`)
   revalidatePath('/listings/new')
+  return { success: true }
+}
+
+export async function deleteListing(listingId: string) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: 'Musisz być zalogowany.' }
+  }
+
+  const { data: listing, error: fetchError } = await supabase
+    .from('listings')
+    .select('user_id, images')
+    .eq('id', listingId)
+    .single()
+
+  if (fetchError || !listing) {
+    return { error: 'Ogłoszenie nie istnieje lub nie masz do niego dostępu.' }
+  }
+
+  const isAdmin = isAdminEmail(user.email ?? undefined)
+  const isOwner = listing.user_id === user.id
+  if (!isAdmin && !isOwner) {
+    return { error: 'Brak uprawnień do usunięcia tego ogłoszenia.' }
+  }
+
+  let client = supabase
+  if (isAdmin && !isOwner) {
+    try {
+      client = createAdminClient()
+    } catch {
+      return { error: 'Konfiguracja administratora nie pozwala na usunięcie cudzego ogłoszenia.' }
+    }
+  }
+  const images = (listing.images ?? []) as string[]
+  const paths = images
+    .filter((url): url is string => typeof url === 'string' && url.length > 0)
+    .map(storagePathFromPublicUrl)
+    .filter((p): p is string => p != null)
+
+  if (paths.length > 0) {
+    await client.storage.from(LISTING_IMAGES_BUCKET).remove(paths)
+  }
+
+  const { error: deleteError } = await client
+    .from('listings')
+    .delete()
+    .eq('id', listingId)
+
+  if (deleteError) {
+    return { error: deleteError.message }
+  }
+
+  revalidatePath('/dashboard')
   return { success: true }
 }

@@ -15,6 +15,7 @@ export default async function NewListingPage() {
   const { data: categories } = await supabase
     .from('categories')
     .select('id, name, parent_id, is_free')
+    .eq('is_active', true)
     .order('name')
   const flat = (categories ?? []).map((c) => ({
     id: c.id,

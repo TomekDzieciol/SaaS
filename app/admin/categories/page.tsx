@@ -26,7 +26,7 @@ export default async function AdminCategoriesPage() {
 
   const { data: categories } = await supabase
     .from('categories')
-    .select('id, name, icon_name, parent_id, is_free, created_at')
+    .select('id, name, icon_name, parent_id, is_free, is_active, created_at')
     .order('name')
 
   const flat = (categories ?? []).map((c) => ({
@@ -35,6 +35,7 @@ export default async function AdminCategoriesPage() {
     icon_name: c.icon_name,
     parent_id: c.parent_id,
     is_free: c.is_free ?? false,
+    is_active: c.is_active ?? true,
   }))
 
   return (
