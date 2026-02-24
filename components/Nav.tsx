@@ -2,12 +2,19 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { LogIn, LogOut, LayoutDashboard, User, PlusSquare } from 'lucide-react'
+import { LogIn, LogOut, LayoutDashboard, User, PlusSquare, FolderTree, Filter } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 
+function isAdminEmail(email: string | undefined): boolean {
+  const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL?.trim().toLowerCase()
+  if (!adminEmail) return false
+  return (email ?? '').trim().toLowerCase() === adminEmail
+}
+
 export function Nav({ user }: { user: SupabaseUser | null }) {
   const router = useRouter()
+  const isAdmin = user ? isAdminEmail(user.email ?? undefined) : false
 
   async function handleSignOut() {
     const supabase = createClient()
@@ -35,6 +42,24 @@ export function Nav({ user }: { user: SupabaseUser | null }) {
                 <LayoutDashboard className="h-4 w-4" />
                 Dashboard
               </Link>
+              {isAdmin && (
+                <>
+                  <Link
+                    href="/admin/categories"
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    <FolderTree className="h-4 w-4" />
+                    Kategorie
+                  </Link>
+                  <Link
+                    href="/admin/filters"
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    <Filter className="h-4 w-4" />
+                    Filtry
+                  </Link>
+                </>
+              )}
               <Link
                 href="/listings/new"
                 className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
