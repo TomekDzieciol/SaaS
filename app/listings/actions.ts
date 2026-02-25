@@ -1,6 +1,6 @@
 'use server'
 
-import 'dotenv/config'
+
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import OpenAI from 'openai'
@@ -87,25 +87,25 @@ export async function createListing(input: NewListingInput) {
     images.push('')
   }
 
-  const tags = Array.isArray(input.tags)
-    ? input.tags.filter((t): t is string => typeof t === 'string').slice(0, 100)
-    : []
+  const tags: string[] = (input.tags ?? []).filter((t): t is string => typeof t === 'string').slice(0, 100)
+
+  const insertPayload = {
+    user_id: user.id,
+    title: input.title.trim(),
+    description: input.description.trim() || null,
+    price: finalPrice,
+    category: null,
+    category_id: categoryId,
+    location: input.location.trim() || null,
+    contact_phone: input.contact_phone.trim() || null,
+    images,
+    tags,
+    status: 'pending_payment',
+  }
 
   const { data, error } = await supabase
     .from('listings')
-    .insert({
-      user_id: user.id,
-      title: input.title.trim(),
-      description: input.description.trim() || null,
-      price: finalPrice,
-      category: null,
-      category_id: categoryId,
-      location: input.location.trim() || null,
-      contact_phone: input.contact_phone.trim() || null,
-      images,
-      tags,
-      status: 'pending_payment',
-    })
+    .insert(insertPayload)
     .select('id')
     .single()
 

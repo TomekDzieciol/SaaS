@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { createListing, updateListingImages, analyzeImageTags } from '@/app/listings/actions'
@@ -23,6 +23,7 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
   const [description, setDescription] = useState<string>('')
   const [isTagging, setIsTagging] = useState(false)
   const [aiTags, setAiTags] = useState<string[]>([])
+  const aiTagsRef = useRef<string[]>([])
 
   const selectedCategory = categories.find((c) => c.id === categoryId)
   const selectedCategoryIsFree = selectedCategory?.is_free ?? false
@@ -57,21 +58,16 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
     }
   }, [selectedCategoryIsFree])
 
-  function removeAiTagLine(text: string): string {
-    return text.replace(/\n?Tagi AI: \[[^\]]*\]\n?/g, '').trim()
-  }
-
   function handleImageChange(index: number, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
-    console.log('Wybrano plik, index:', index)
     const next = [...imageFiles]
     next[index] = file
     setImageFiles(next)
     e.target.value = ''
 
     if (index === 0) {
-      setDescription((prev) => removeAiTagLine(prev))
       setAiTags([])
+      aiTagsRef.current = []
       if (!file) return
 
       console.log('Wywołuję runTagging teraz!')
@@ -98,10 +94,9 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
           const result = await analyzeImageTags({ base64 })
           console.log('Wynik z serwera:', result)
           if (!('error' in result) && result.tags && result.tags.length >= 2) {
-            setAiTags(result.tags)
-            setDescription((prev) =>
-              prev ? prev + '\n\nTagi AI: [' + result.tags!.join(', ') + ']' : 'Tagi AI: [' + result.tags!.join(', ') + ']'
-            )
+            const tags = result.tags
+            setAiTags(tags)
+            aiTagsRef.current = tags
           }
         } catch {
           // Nie dodajemy tagów przy błędzie
@@ -141,6 +136,7 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
       setLoading(false)
       return
     }
+    const tagsToSave = aiTagsRef.current.length > 0 ? aiTagsRef.current : aiTags
     const result = await createListing({
       title: (formData.get('title') as string) ?? '',
       description: description.trim(),
@@ -150,7 +146,7 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
       images: Array(MAX_IMAGES).fill(''),
       category_id: categoryId || null,
       filter_values,
-      tags: aiTags,
+      tags: tagsToSave,
     })
 
     if (result.error) {
