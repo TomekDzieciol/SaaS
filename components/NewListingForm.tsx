@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { createListing, updateListingImages } from '@/app/listings/actions'
+import { createListing, updateListingImages, analyzeImageTags } from '@/app/listings/actions'
 import { getFiltersForCategory, type FilterWithOptions } from '@/app/listings/getFiltersForCategory'
 import { ImagePlus, Loader2 } from 'lucide-react'
 
@@ -20,6 +20,9 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
   const [categoryId, setCategoryId] = useState<string>('')
   const [filters, setFilters] = useState<FilterWithOptions[]>([])
   const [priceDisplay, setPriceDisplay] = useState<string>('')
+  const [description, setDescription] = useState<string>('')
+  const [isTagging, setIsTagging] = useState(false)
+  const [aiTags, setAiTags] = useState<string[]>([])
 
   const selectedCategory = categories.find((c) => c.id === categoryId)
   const selectedCategoryIsFree = selectedCategory?.is_free ?? false
@@ -54,12 +57,60 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
     }
   }, [selectedCategoryIsFree])
 
+  function removeAiTagLine(text: string): string {
+    return text.replace(/\n?Tagi AI: \[[^\]]*\]\n?/g, '').trim()
+  }
+
   function handleImageChange(index: number, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
+    console.log('Wybrano plik, index:', index)
     const next = [...imageFiles]
     next[index] = file
     setImageFiles(next)
     e.target.value = ''
+
+    if (index === 0) {
+      setDescription((prev) => removeAiTagLine(prev))
+      setAiTags([])
+      if (!file) return
+
+      console.log('Wywołuję runTagging teraz!')
+      const runTagging = async () => {
+        setIsTagging(true)
+        await new Promise((r) => setTimeout(r, 2000))
+        console.log('Start analizy AI dla pliku...')
+        let base64: string
+        try {
+          base64 = await new Promise<string>((resolve, reject) => {
+            const r = new FileReader()
+            r.onload = () => resolve(r.result as string)
+            r.onerror = () => reject(new Error('Nie udało się odczytać pliku'))
+            r.readAsDataURL(file)
+          })
+        } catch {
+          return
+        }
+        if (!base64) {
+          setIsTagging(false)
+          return
+        }
+        try {
+          const result = await analyzeImageTags({ base64 })
+          console.log('Wynik z serwera:', result)
+          if (!('error' in result) && result.tags && result.tags.length >= 2) {
+            setAiTags(result.tags)
+            setDescription((prev) =>
+              prev ? prev + '\n\nTagi AI: [' + result.tags!.join(', ') + ']' : 'Tagi AI: [' + result.tags!.join(', ') + ']'
+            )
+          }
+        } catch {
+          // Nie dodajemy tagów przy błędzie
+        } finally {
+          setIsTagging(false)
+        }
+      }
+      void runTagging()
+    }
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -92,13 +143,14 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
     }
     const result = await createListing({
       title: (formData.get('title') as string) ?? '',
-      description: (formData.get('description') as string) ?? '',
+      description: description.trim(),
       price: priceCleaned,
       location: (formData.get('location') as string) ?? '',
       contact_phone: (formData.get('contact_phone') as string) ?? '',
       images: Array(MAX_IMAGES).fill(''),
       category_id: categoryId || null,
       filter_values,
+      tags: aiTags,
     })
 
     if (result.error) {
@@ -197,8 +249,15 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
           id="description"
           name="description"
           rows={5}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
           className={inputClass}
         />
+        {isTagging && (
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            🤖 AI analizuje zdjęcie...
+          </p>
+        )}
       </div>
 
       <div>
@@ -326,10 +385,14 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
 
       <button
         type="submit"
-        disabled={loading}
+        disabled={loading || isTagging}
         className="flex w-full justify-center rounded-lg bg-indigo-600 px-4 py-3 text-base font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
       >
-        {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Zapisz i przejdź do płatności'}
+        {isTagging
+          ? '🤖 AI analizuje zdjęcie...'
+          : loading
+            ? <Loader2 className="h-5 w-5 animate-spin" />
+            : 'Zapisz i przejdź do płatności'}
       </button>
     </form>
   )

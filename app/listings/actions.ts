@@ -1,7 +1,11 @@
 'use server'
 
+import 'dotenv/config'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import OpenAI from 'openai'
+
+console.log('AKCJE ZAŁADOWANE')
 
 const LISTING_IMAGES_BUCKET = 'listing-images'
 
@@ -36,6 +40,7 @@ export type NewListingInput = {
   images: string[]
   category_id?: string | null
   filter_values?: FilterValueInput[]
+  tags?: string[]
 }
 
 export async function createListing(input: NewListingInput) {
@@ -82,6 +87,10 @@ export async function createListing(input: NewListingInput) {
     images.push('')
   }
 
+  const tags = Array.isArray(input.tags)
+    ? input.tags.filter((t): t is string => typeof t === 'string').slice(0, 100)
+    : []
+
   const { data, error } = await supabase
     .from('listings')
     .insert({
@@ -94,6 +103,7 @@ export async function createListing(input: NewListingInput) {
       location: input.location.trim() || null,
       contact_phone: input.contact_phone.trim() || null,
       images,
+      tags,
       status: 'pending_payment',
     })
     .select('id')
@@ -232,4 +242,67 @@ export async function deleteListing(listingId: string) {
 
   revalidatePath('/dashboard')
   return { success: true }
+}
+
+const ANALYZE_IMAGE_SYSTEM_PROMPT =
+  'Jesteś ekspertem od e-commerce. Przeanalizuj to zdjęcie i zwróć dokładnie dwa najważniejsze słowa kluczowe (tagi), które najlepiej opisują przedmiot. Zwróć tylko te dwa słowa oddzielone przecinkiem, bez dodatkowego tekstu.'
+
+export async function analyzeImageTags(image: { url?: string; base64?: string }) {
+  console.log('DEBUG ENV:', process.env.NODE_ENV)
+  console.log('KLUCZ RAW:', process.env.OPENAI_API_KEY ? 'MA WARTOŚĆ' : 'PUSTY')
+  console.log('DŁUGOŚĆ KLUCZA:', process.env.OPENAI_API_KEY?.length ?? 0)
+  let apiKey = process.env['OPENAI_API_KEY']
+  if (!apiKey || apiKey.length === 0) {
+    const dotenv = await import('dotenv')
+    dotenv.config({ path: '.env.local' })
+    apiKey = process.env['OPENAI_API_KEY']
+  }
+  console.log('Klucz OpenAI obecny:', !!apiKey)
+  if (!apiKey) {
+    return { error: 'Brak konfiguracji OPENAI_API_KEY' }
+  }
+
+  const imageUrl = image.url?.trim()
+  const imageBase64 = image.base64?.trim()
+  if (!imageUrl && !imageBase64) {
+    return { error: 'Podaj URL lub dane base64 obrazu' }
+  }
+
+  const base64 = imageBase64 || (imageUrl?.startsWith('data:') ? imageUrl : undefined)
+  const payloadLength = base64?.length ?? (imageUrl?.length ?? 0)
+  console.log('Otrzymano dane do analizy, długość base64:', payloadLength)
+
+  let imageSource: { type: 'image_url'; image_url: { url: string } }
+  if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
+    imageSource = { type: 'image_url', image_url: { url: imageUrl } }
+  } else if (base64) {
+    const dataUrl = base64.startsWith('data:') ? base64 : `data:image/jpeg;base64,${base64}`
+    imageSource = { type: 'image_url', image_url: { url: dataUrl } }
+  } else if (imageUrl) {
+    imageSource = { type: 'image_url', image_url: { url: imageUrl } }
+  } else {
+    return { error: 'Nieprawidłowy format obrazu' }
+  }
+
+  console.log('DEBUG: Wszystkie klucze env na serwerze:', Object.keys(process.env).filter((k) => k.includes('KEY')))
+  try {
+    const openai = new OpenAI({ apiKey })
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      max_tokens: 100,
+      messages: [
+        { role: 'system', content: ANALYZE_IMAGE_SYSTEM_PROMPT },
+        { role: 'user', content: [imageSource] },
+      ],
+    })
+
+    const raw = completion.choices[0]?.message?.content?.trim()
+    console.log('AI zwróciło:', completion.choices[0]?.message?.content)
+    const result = { tags: raw ? raw.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 2) : [] }
+    if (!raw) return { error: 'Brak odpowiedzi od modelu', tags: [] }
+    return result
+  } catch (err) {
+    console.error('[analyzeImageTags]', err)
+    return { error: err instanceof Error ? err.message : 'Błąd analizy obrazu' }
+  }
 }
