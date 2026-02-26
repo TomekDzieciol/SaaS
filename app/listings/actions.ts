@@ -35,7 +35,12 @@ export type NewListingInput = {
   title: string
   description: string
   price: string
+  /** Miasto (tekst) */
   location: string
+  /** UUID województwa z tabeli regions */
+  region_id?: string | null
+  /** UUID powiatu z tabeli districts */
+  district_id?: string | null
   contact_phone: string
   images: string[]
   category_id?: string | null
@@ -89,6 +94,9 @@ export async function createListing(input: NewListingInput) {
 
   const tags: string[] = (input.tags ?? []).filter((t): t is string => typeof t === 'string').slice(0, 100)
 
+  const regionId = input.region_id?.trim() || null
+  const districtId = input.district_id?.trim() || null
+
   const insertPayload = {
     user_id: user.id,
     title: input.title.trim(),
@@ -97,6 +105,8 @@ export async function createListing(input: NewListingInput) {
     category: null,
     category_id: categoryId,
     location: input.location.trim() || null,
+    region_id: regionId,
+    district_id: districtId,
     contact_phone: input.contact_phone.trim() || null,
     images,
     tags,

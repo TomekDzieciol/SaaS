@@ -11,6 +11,8 @@ const MAX_IMAGES = 6
 const BUCKET = 'listing-images'
 
 type CategoryRow = { id: string; name: string; parent_id: string | null; is_free: boolean }
+type RegionRow = { id: string; name: string }
+type DistrictRow = { id: string; region_id: string; name: string }
 
 export function NewListingForm({ userId, categories }: { userId: string; categories: CategoryRow[] }) {
   const router = useRouter()
@@ -24,6 +26,10 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
   const [isTagging, setIsTagging] = useState(false)
   const [aiTags, setAiTags] = useState<string[]>([])
   const aiTagsRef = useRef<string[]>([])
+  const [regions, setRegions] = useState<RegionRow[]>([])
+  const [districts, setDistricts] = useState<DistrictRow[]>([])
+  const [regionId, setRegionId] = useState<string>('')
+  const [districtId, setDistrictId] = useState<string>('')
 
   const selectedCategory = categories.find((c) => c.id === categoryId)
   const selectedCategoryIsFree = selectedCategory?.is_free ?? false
@@ -49,6 +55,36 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
     })
     return () => { cancelled = true }
   }, [categoryId])
+
+  const supabase = createClient()
+  useEffect(() => {
+    let cancelled = false
+    supabase
+      .from('regions')
+      .select('id, name')
+      .order('name')
+      .then(({ data }) => {
+        if (!cancelled && data) setRegions(data as RegionRow[])
+      })
+    return () => { cancelled = true }
+  }, [])
+  useEffect(() => {
+    setDistrictId('')
+    if (!regionId) {
+      setDistricts([])
+      return
+    }
+    let cancelled = false
+    supabase
+      .from('districts')
+      .select('id, region_id, name')
+      .eq('region_id', regionId)
+      .order('name')
+      .then(({ data }) => {
+        if (!cancelled && data) setDistricts(data as DistrictRow[])
+      })
+    return () => { cancelled = true }
+  }, [regionId])
 
   useEffect(() => {
     if (selectedCategoryIsFree) {
@@ -142,6 +178,8 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
       description: description.trim(),
       price: priceCleaned,
       location: (formData.get('location') as string) ?? '',
+      region_id: regionId || null,
+      district_id: districtId || null,
       contact_phone: (formData.get('contact_phone') as string) ?? '',
       images: Array(MAX_IMAGES).fill(''),
       category_id: categoryId || null,
@@ -161,7 +199,6 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
       return
     }
 
-    const supabase = createClient()
     const urls: string[] = []
     const filesToUpload = imageFiles.filter((f): f is File => f != null)
 
@@ -325,11 +362,57 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
         </div>
       )}
 
-      <div>
-        <label htmlFor="location" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-          Lokalizacja
-        </label>
-        <input id="location" name="location" type="text" className={inputClass} />
+      <div className="space-y-4">
+        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Lokalizacja</h3>
+        <div>
+          <label htmlFor="region_id" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+            Województwo
+          </label>
+          <select
+            id="region_id"
+            value={regionId}
+            onChange={(e) => setRegionId(e.target.value)}
+            className={inputClass}
+          >
+            <option value="">— Wybierz województwo —</option>
+            {regions.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="district_id" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+            Powiat
+          </label>
+          <select
+            id="district_id"
+            value={districtId}
+            onChange={(e) => setDistrictId(e.target.value)}
+            disabled={!regionId}
+            className={inputClass}
+          >
+            <option value="">— Wybierz powiat —</option>
+            {districts.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="location" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+            Miasto
+          </label>
+          <input
+            id="location"
+            name="location"
+            type="text"
+            placeholder="np. Warszawa"
+            className={inputClass}
+          />
+        </div>
       </div>
 
       <div>
