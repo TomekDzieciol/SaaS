@@ -46,6 +46,8 @@ export type NewListingInput = {
   category_id?: string | null
   filter_values?: FilterValueInput[]
   tags?: string[]
+  /** UUID z publication_periods – okres publikacji; na jego podstawie liczony expires_at i archived_until */
+  publication_period_id?: string | null
 }
 
 export async function createListing(input: NewListingInput) {
@@ -57,6 +59,13 @@ export async function createListing(input: NewListingInput) {
   if (!user) {
     return { error: 'Musisz być zalogowany.' }
   }
+
+  const contactPhoneRaw = (input.contact_phone ?? '').trim()
+  const contactPhoneDigits = contactPhoneRaw.replace(/\D/g, '')
+  if (contactPhoneDigits.length !== 9) {
+    return { error: 'Telefon kontaktowy jest wymagany i musi składać się z 9 cyfr (spacje są ignorowane).' }
+  }
+  const contactPhoneNormalized = contactPhoneDigits
 
   const priceRaw = input.price?.toString().trim() ?? ''
   const priceDigits = priceRaw.replace(/\D/g, '')
@@ -71,10 +80,10 @@ export async function createListing(input: NewListingInput) {
   if (categoryId) {
     const { data: category } = await supabase
       .from('categories')
-      .select('is_free, is_active')
+      .select('is_free, is_active, deleted_at')
       .eq('id', categoryId)
       .single()
-    if (!category || !category.is_active) {
+    if (!category || !category.is_active || category.deleted_at) {
       return { error: 'Wybrana kategoria nie jest dostępna.' }
     }
     categoryIsFree = category.is_free ?? false
@@ -97,6 +106,41 @@ export async function createListing(input: NewListingInput) {
   const regionId = input.region_id?.trim() || null
   const districtId = input.district_id?.trim() || null
 
+  const periodId = input.publication_period_id?.trim() || null
+  if (!periodId) {
+    return { error: 'Wybierz okres publikacji.' }
+  }
+  if (categoryId) {
+    const { data: cpp } = await supabase
+      .from('category_publication_periods')
+      .select('publication_period_id')
+      .eq('category_id', categoryId)
+      .eq('publication_period_id', periodId)
+      .maybeSingle()
+    if (!cpp) {
+      return { error: 'Wybrany okres publikacji nie jest dostępny w tej kategorii.' }
+    }
+  }
+  let expiresAt: string | null = null
+  let archivedUntil: string | null = null
+  {
+    const { data: period } = await supabase
+      .from('publication_periods')
+      .select('days_count')
+      .eq('id', periodId)
+      .single()
+    if (period?.days_count == null) {
+      return { error: 'Wybrany okres publikacji nie jest dostępny.' }
+    }
+    const now = new Date()
+    const exp = new Date(now)
+    exp.setUTCDate(exp.getUTCDate() + period.days_count)
+    const arch = new Date(exp)
+    arch.setUTCDate(arch.getUTCDate() + 90)
+    expiresAt = exp.toISOString()
+    archivedUntil = arch.toISOString()
+  }
+
   const insertPayload = {
     user_id: user.id,
     title: input.title.trim(),
@@ -104,13 +148,16 @@ export async function createListing(input: NewListingInput) {
     price: finalPrice,
     category: null,
     category_id: categoryId,
+    publication_period_id: periodId,
     location: input.location.trim() || null,
     region_id: regionId,
     district_id: districtId,
-    contact_phone: input.contact_phone.trim() || null,
+    contact_phone: contactPhoneNormalized,
     images,
     tags,
     status: 'pending_payment',
+    expires_at: expiresAt,
+    archived_until: archivedUntil,
   }
 
   const { data, error } = await supabase
@@ -163,6 +210,32 @@ export async function activateListing(listingId: string, status: 'active' = 'act
   }
 
   revalidatePath(`/listings/${listingId}/pay`)
+  return { success: true }
+}
+
+export async function archiveListing(listingId: string) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: 'Musisz być zalogowany.' }
+  }
+
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('listings')
+    .update({ status: 'archived', expires_at: now })
+    .eq('id', listingId)
+    .eq('user_id', user.id)
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  revalidatePath('/dashboard')
+  revalidatePath(`/listings/${listingId}`)
   return { success: true }
 }
 

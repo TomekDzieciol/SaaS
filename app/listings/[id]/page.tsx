@@ -12,9 +12,8 @@ export async function generateMetadata({
   const supabase = await createClient()
   const { data: listing } = await supabase
     .from('listings')
-    .select('title, description, price, location')
+    .select('title, description, price, location, status')
     .eq('id', params.id)
-    .eq('status', 'active')
     .single()
 
   if (!listing) {
@@ -53,9 +52,7 @@ export default async function ListingDetailPage({
     notFound()
   }
 
-  if (listing.status !== 'active') {
-    notFound()
-  }
+  const isArchived = listing.status === 'archived'
 
   const imageUrls = (listing.images ?? []).filter(
     (url): url is string => Boolean(url) && url.startsWith('http')
@@ -140,24 +137,34 @@ export default async function ListingDetailPage({
             </div>
           )}
 
-          <div className="mt-8 rounded-xl bg-slate-50 dark:bg-slate-800/50 p-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Dane kontaktowe sprzedającego
-            </h2>
-            {listing.contact_phone ? (
-              <a
-                href={`tel:${listing.contact_phone.replace(/\s/g, '')}`}
-                className="mt-3 flex items-center gap-3 text-lg font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
-              >
-                <Phone className="h-5 w-5" />
-                {listing.contact_phone}
-              </a>
-            ) : (
-              <p className="mt-3 text-slate-500 dark:text-slate-400">
-                Brak podanego telefonu.
+          {isArchived && (
+            <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 p-6">
+              <p className="text-center font-medium text-amber-800 dark:text-amber-200">
+                To ogłoszenie wygasło i trafiło do archiwum.
               </p>
-            )}
-          </div>
+            </div>
+          )}
+
+          {!isArchived && (
+            <div className="mt-8 rounded-xl bg-slate-50 dark:bg-slate-800/50 p-6">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Dane kontaktowe sprzedającego
+              </h2>
+              {listing.contact_phone ? (
+                <a
+                  href={`tel:${listing.contact_phone.replace(/\s/g, '')}`}
+                  className="mt-3 flex items-center gap-3 text-lg font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  <Phone className="h-5 w-5" />
+                  {listing.contact_phone}
+                </a>
+              ) : (
+                <p className="mt-3 text-slate-500 dark:text-slate-400">
+                  Brak podanego telefonu.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </article>
     </div>

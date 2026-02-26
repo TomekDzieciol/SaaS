@@ -10,16 +10,29 @@ import { ImagePlus, Loader2 } from 'lucide-react'
 const MAX_IMAGES = 6
 const BUCKET = 'listing-images'
 
-type CategoryRow = { id: string; name: string; parent_id: string | null; is_free: boolean }
+type CategoryRow = { id: string; name: string; parent_id: string | null; is_free: boolean; default_period_id: string | null }
 type RegionRow = { id: string; name: string }
 type DistrictRow = { id: string; region_id: string; name: string }
 
-export function NewListingForm({ userId, categories }: { userId: string; categories: CategoryRow[] }) {
+export type CategoryPeriodOption = { id: string; label: string; days_count: number; price_cents: number }
+
+export function NewListingForm({
+  userId,
+  categories,
+  categoryPeriods,
+}: {
+  userId: string
+  categories: CategoryRow[]
+  categoryPeriods: Record<string, { periods: CategoryPeriodOption[]; defaultPeriodId: string | null }>
+}) {
   const router = useRouter()
+  const [step, setStep] = useState<1 | 2>(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [imageFiles, setImageFiles] = useState<(File | null)[]>(Array(MAX_IMAGES).fill(null))
-  const [categoryId, setCategoryId] = useState<string>('')
+  const [categoryPath, setCategoryPath] = useState<string[]>([])
+  const categoryId = categoryPath.length > 0 ? categoryPath[categoryPath.length - 1] : ''
+  const [periodId, setPeriodId] = useState<string>('')
   const [filters, setFilters] = useState<FilterWithOptions[]>([])
   const [priceDisplay, setPriceDisplay] = useState<string>('')
   const [description, setDescription] = useState<string>('')
@@ -33,6 +46,8 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
 
   const selectedCategory = categories.find((c) => c.id === categoryId)
   const selectedCategoryIsFree = selectedCategory?.is_free ?? false
+  const periodsForCategory = categoryId ? categoryPeriods[categoryId]?.periods ?? [] : []
+  const defaultPeriodIdForCategory = categoryId ? categoryPeriods[categoryId]?.defaultPeriodId ?? null : null
 
   function formatPriceWithSpaces(value: string): string {
     const digits = value.replace(/\D/g, '')
@@ -93,6 +108,11 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
       setPriceDisplay('')
     }
   }, [selectedCategoryIsFree])
+
+  useEffect(() => {
+    const defaultId = defaultPeriodIdForCategory ?? periodsForCategory[0]?.id ?? ''
+    setPeriodId((prev) => (periodsForCategory.some((p) => p.id === prev) ? prev : defaultId))
+  }, [categoryId, defaultPeriodIdForCategory, periodsForCategory])
 
   function handleImageChange(index: number, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
@@ -185,6 +205,7 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
       category_id: categoryId || null,
       filter_values,
       tags: tagsToSave,
+      publication_period_id: periodId || null,
     })
 
     if (result.error) {
@@ -236,30 +257,55 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
     router.refresh()
   }
 
+  function handleNextStep() {
+    setError(null)
+    const form = document.getElementById('new-listing-form') as HTMLFormElement | null
+    const title = (form?.elements.namedItem('title') as HTMLInputElement | null)?.value?.trim()
+    if (!title) {
+      setError('Wpisz tytuł ogłoszenia.')
+      return
+    }
+    if (!categoryId) {
+      setError('Wybierz kategorię (końcową podkategorię).')
+      return
+    }
+    const priceCleaned = priceDisplay.replace(/\D/g, '')
+    if (!selectedCategoryIsFree && (priceCleaned === '' || priceCleaned === '0')) {
+      setError('W tej kategorii cena musi być większa od zera.')
+      return
+    }
+    if (periodsForCategory.length === 0) {
+      setError('Brak dostępnych okresów publikacji dla tej kategorii.')
+      return
+    }
+    const contactPhone = (form?.elements.namedItem('contact_phone') as HTMLInputElement | null)?.value?.trim() ?? ''
+    const phoneDigits = contactPhone.replace(/\D/g, '')
+    if (phoneDigits.length !== 9) {
+      setError('Telefon kontaktowy jest wymagany i musi składać się z 9 cyfr (spacje są dozwolone).')
+      return
+    }
+    const defaultId = defaultPeriodIdForCategory ?? periodsForCategory[0]?.id ?? ''
+    setPeriodId(defaultId || periodsForCategory[0].id)
+    setStep(2)
+  }
+
   const inputClass =
     'mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-white shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500'
 
-  return (
-    <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-      <div>
-        <label htmlFor="category_id" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-          Kategoria
-        </label>
-        <select
-          id="category_id"
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-          className={inputClass}
-        >
-          <option value="">— Wybierz kategorię —</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </div>
+  const rootCategories = categories.filter((c) => c.parent_id === null)
+  function getChildren(parentId: string) {
+    return categories.filter((c) => c.parent_id === parentId)
+  }
 
+  function handleCategoryChange(levelIndex: number, value: string) {
+    setCategoryPath((prev) =>
+      value ? [...prev.slice(0, levelIndex), value] : prev.slice(0, levelIndex)
+    )
+  }
+
+  return (
+    <form id="new-listing-form" onSubmit={handleSubmit} className="mt-8 space-y-6">
+      <div className={step === 2 ? 'hidden' : undefined}>
       <div>
         <label htmlFor="title" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
           Tytuł *
@@ -291,6 +337,58 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
             🤖 AI analizuje zdjęcie...
           </p>
         )}
+      </div>
+
+      <div className="space-y-4">
+        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+          Kategoria
+        </label>
+        <div>
+          <label htmlFor="category_main" className="block text-xs font-medium text-slate-500 dark:text-slate-400">
+            Kategoria główna
+          </label>
+          <select
+            id="category_main"
+            value={categoryPath[0] ?? ''}
+            onChange={(e) => handleCategoryChange(0, e.target.value)}
+            className={inputClass}
+          >
+            <option value="">— Wybierz kategorię główną —</option>
+            {rootCategories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {categoryPath.map((parentId, levelIndex) => {
+          const children = getChildren(parentId)
+          if (children.length === 0) return null
+          const value = categoryPath[levelIndex + 1] ?? ''
+          return (
+            <div key={parentId}>
+              <label
+                htmlFor={`category_sub_${levelIndex}`}
+                className="block text-xs font-medium text-slate-500 dark:text-slate-400"
+              >
+                Podkategoria
+              </label>
+              <select
+                id={`category_sub_${levelIndex}`}
+                value={value}
+                onChange={(e) => handleCategoryChange(levelIndex + 1, e.target.value)}
+                className={inputClass}
+              >
+                <option value="">— Wybierz podkategorię —</option>
+                {children.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )
+        })}
       </div>
 
       <div>
@@ -417,9 +515,23 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
 
       <div>
         <label htmlFor="contact_phone" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-          Telefon kontaktowy
+          Telefon kontaktowy <span className="text-red-600 dark:text-red-400">(wymagane)</span>
         </label>
-        <input id="contact_phone" name="contact_phone" type="tel" className={inputClass} />
+        <input
+          id="contact_phone"
+          name="contact_phone"
+          type="tel"
+          placeholder="np. 123 456 789"
+          className={inputClass}
+          required
+          minLength={9}
+          maxLength={13}
+          inputMode="numeric"
+          autoComplete="tel"
+        />
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          9 cyfr, spacje są dozwolone.
+        </p>
       </div>
 
       <div>
@@ -463,16 +575,65 @@ export function NewListingForm({ userId, categories }: { userId: string; categor
       )}
 
       <button
-        type="submit"
-        disabled={loading || isTagging}
+        type="button"
+        onClick={handleNextStep}
+        disabled={isTagging}
         className="flex w-full justify-center rounded-lg bg-indigo-600 px-4 py-3 text-base font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
       >
-        {isTagging
-          ? '🤖 AI analizuje zdjęcie...'
-          : loading
-            ? <Loader2 className="h-5 w-5 animate-spin" />
-            : 'Zapisz i przejdź do płatności'}
+        {isTagging ? '🤖 AI analizuje zdjęcie...' : 'Dalej — wybór okresu publikacji'}
       </button>
+      </div>
+
+      <div className={step === 1 ? 'hidden' : undefined}>
+      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 p-6">
+        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
+          Okres publikacji
+        </h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+          Ogłoszenie będzie widoczne przez wybrany czas. Po upływie tego okresu trafi do archiwum.
+        </p>
+        <label htmlFor="publication_period_id" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+          Wybierz okres
+        </label>
+        <select
+          id="publication_period_id"
+          value={periodId}
+          onChange={(e) => setPeriodId(e.target.value)}
+          className={inputClass}
+          required
+        >
+          <option value="">— Wybierz okres —</option>
+          {periodsForCategory.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label} – {(p.price_cents / 100).toFixed(2)} zł
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {error && (
+        <p className="rounded-lg bg-red-50 dark:bg-red-900/20 px-3 py-2 text-sm text-red-700 dark:text-red-400">
+          {error}
+        </p>
+      )}
+
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={() => setStep(1)}
+          className="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-3 text-base font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+        >
+          Wstecz
+        </button>
+        <button
+          type="submit"
+          disabled={loading}
+          className="flex-1 flex justify-center rounded-lg bg-indigo-600 px-4 py-3 text-base font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Zapisz ogłoszenie'}
+        </button>
+      </div>
+      </div>
     </form>
   )
 }

@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff } from 'lucide-react'
-import { updateCategoryIsFree, updateCategoryActiveStatus } from '@/app/admin/categories/actions'
+import { Eye, EyeOff, RotateCcw } from 'lucide-react'
+import { updateCategoryIsFree, updateCategoryActiveStatus, restoreCategory } from '@/app/admin/categories/actions'
 
 export type CategoryWithFree = {
   id: string
@@ -13,6 +13,7 @@ export type CategoryWithFree = {
   parent_id: string | null
   is_free: boolean
   is_active: boolean
+  deleted_at?: string | null
 }
 
 function buildTree(categories: CategoryWithFree[], parentId: string | null): CategoryWithFree[] {
@@ -28,6 +29,8 @@ type TreeState = {
   setPending: React.Dispatch<React.SetStateAction<Set<string>>>
   pendingActive: Set<string>
   setPendingActive: React.Dispatch<React.SetStateAction<Set<string>>>
+  pendingRestore: Set<string>
+  setPendingRestore: React.Dispatch<React.SetStateAction<Set<string>>>
 }
 
 function AdminCategoryTreeInner({
@@ -42,7 +45,7 @@ function AdminCategoryTreeInner({
   state: TreeState
 }) {
   const router = useRouter()
-  const { optimisticFree, setOptimisticFree, optimisticActive, setOptimisticActive, pending, setPending, pendingActive, setPendingActive } = state
+  const { optimisticFree, setOptimisticFree, optimisticActive, setOptimisticActive, pending, setPending, pendingActive, setPendingActive, pendingRestore, setPendingRestore } = state
   const children = buildTree(categories, parentId)
 
   function getChecked(cat: CategoryWithFree): boolean {
@@ -105,6 +108,18 @@ function AdminCategoryTreeInner({
     router.refresh()
   }
 
+  async function handleRestore(cat: CategoryWithFree) {
+    setPendingRestore((prev) => new Set(prev).add(cat.id))
+    const result = await restoreCategory(cat.id)
+    setPendingRestore((prev) => {
+      const next = new Set(prev)
+      next.delete(cat.id)
+      return next
+    })
+    if (result.error) return
+    router.refresh()
+  }
+
   if (children.length === 0) return null
 
   return (
@@ -114,16 +129,42 @@ function AdminCategoryTreeInner({
         const isPending = pending.has(cat.id)
         const active = getActive(cat)
         const isPendingActive = pendingActive.has(cat.id)
+        const isPendingRestore = pendingRestore.has(cat.id)
+        const isDeleted = !!cat.deleted_at
         return (
           <li
             key={cat.id}
-            className={`flex items-center justify-between gap-4 border-t border-slate-200 dark:border-slate-700 first:border-t-0 ${!active ? 'opacity-50' : ''}`}
+            className={`flex items-center justify-between gap-4 border-t border-slate-200 dark:border-slate-700 first:border-t-0 ${!active ? 'opacity-50' : ''} ${isDeleted ? 'opacity-60 bg-slate-50 dark:bg-slate-800/30' : ''}`}
             style={{ paddingLeft: 16 + depth * 24 }}
           >
             <span className="py-3 font-medium text-slate-700 dark:text-slate-300">
               {cat.name}
+              {isDeleted && <span className="ml-2 text-xs text-slate-500">(usunięta)</span>}
             </span>
             <span className="flex shrink-0 items-center gap-4 py-3 pr-4 text-sm">
+              {isDeleted ? (
+                <button
+                  type="button"
+                  onClick={() => handleRestore(cat)}
+                  disabled={isPendingRestore}
+                  className="relative z-10 inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 disabled:opacity-50"
+                  title="Przywróć kategorię"
+                >
+                  {isPendingRestore ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" />
+                  ) : (
+                    <RotateCcw className="h-4 w-4" />
+                  )}
+                  Przywróć
+                </button>
+              ) : (
+                <Link
+                  href={`/admin/categories/${cat.id}/edit`}
+                  className="relative z-10 font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  Edytuj
+                </Link>
+              )}
               <button
                 type="button"
                 onClick={() => handleToggleActive(cat)}
@@ -182,6 +223,7 @@ export function AdminCategoryTree({
   const [optimisticActive, setOptimisticActive] = useState<Record<string, boolean>>({})
   const [pending, setPending] = useState<Set<string>>(new Set())
   const [pendingActive, setPendingActive] = useState<Set<string>>(new Set())
+  const [pendingRestore, setPendingRestore] = useState<Set<string>>(new Set())
   const state: TreeState = {
     optimisticFree,
     setOptimisticFree,
@@ -191,6 +233,8 @@ export function AdminCategoryTree({
     setPending,
     pendingActive,
     setPendingActive,
+    pendingRestore,
+    setPendingRestore,
   }
   return (
     <AdminCategoryTreeInner

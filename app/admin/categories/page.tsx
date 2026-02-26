@@ -26,8 +26,13 @@ export default async function AdminCategoriesPage() {
 
   const { data: categories } = await supabase
     .from('categories')
-    .select('id, name, icon_name, parent_id, is_free, is_active, created_at')
+    .select('id, name, icon_name, parent_id, is_free, is_active, created_at, deleted_at')
     .order('name')
+
+  const { data: periods } = await supabase
+    .from('publication_periods')
+    .select('id, label, days_count')
+    .order('days_count')
 
   const flat = (categories ?? []).map((c) => ({
     id: c.id,
@@ -36,6 +41,7 @@ export default async function AdminCategoriesPage() {
     parent_id: c.parent_id,
     is_free: c.is_free ?? false,
     is_active: c.is_active ?? true,
+    deleted_at: c.deleted_at ?? null,
   }))
 
   return (
@@ -55,7 +61,7 @@ export default async function AdminCategoriesPage() {
         Zarządzaj kategoriami (hierarchia: nadrzędna → podkategoria). Nazwa i opcjonalnie ikona. Przy każdej kategorii: Zarządzaj filtrami.
       </p>
 
-      <AdminCategoriesForm categories={flat} />
+      <AdminCategoriesForm categories={flat} publicationPeriods={periods ?? []} />
 
       <section className="mt-10">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">

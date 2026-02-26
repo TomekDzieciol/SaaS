@@ -12,7 +12,7 @@ export default async function HomePage() {
     supabase
       .from('listings')
       .select('id, title, price, location, category, images, description, tags, region_id, district_id')
-      .eq('status', 'active')
+      .eq('status', 'active') // tylko aktywne; archiwalne dostępne wyłącznie przez bezpośredni link (SEO)
       .order('created_at', { ascending: false })
       .limit(100),
     supabase.from('regions').select('id, name').order('name'),

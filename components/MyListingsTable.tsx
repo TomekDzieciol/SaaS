@@ -3,12 +3,13 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ExternalLink, Trash2 } from 'lucide-react'
-import { deleteListing } from '@/app/listings/actions'
+import { ExternalLink, Trash2, Archive } from 'lucide-react'
+import { deleteListing, archiveListing } from '@/app/listings/actions'
 
 const STATUS_LABELS: Record<string, string> = {
   pending_payment: 'Oczekuje na płatność',
   active: 'Aktywne',
+  archived: 'Archiwum',
   expired: 'Wygasłe',
   rejected: 'Odrzucone',
 }
@@ -16,6 +17,7 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_STYLES: Record<string, string> = {
   pending_payment: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
   active: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+  archived: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400',
   expired: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400',
   rejected: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
 }
@@ -40,7 +42,23 @@ export function MyListingsTable({
 }) {
   const router = useRouter()
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [archivingId, setArchivingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  async function handleArchive(row: ListingRow) {
+    if (row.user_id !== currentUserId || row.status !== 'active') return
+    if (!window.confirm('Czy na pewno chcesz zakończyć to ogłoszenie? Trafi do archiwum i nie będzie widoczne w wyszukiwarce.')) return
+
+    setError(null)
+    setArchivingId(row.id)
+    const result = await archiveListing(row.id)
+    setArchivingId(null)
+    if (result.error) {
+      setError(result.error)
+      return
+    }
+    router.refresh()
+  }
 
   async function handleDelete(row: ListingRow) {
     const canDelete = isAdmin || row.user_id === currentUserId
@@ -102,7 +120,6 @@ export function MyListingsTable({
         </thead>
         <tbody className="divide-y divide-slate-200 dark:divide-slate-700 bg-white dark:bg-slate-800/30">
           {listings.map((row) => {
-            const canDelete = isAdmin || row.user_id === currentUserId
             const isDeleting = deletingId === row.id
             return (
               <tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
@@ -135,7 +152,7 @@ export function MyListingsTable({
                 )}
                 <td className="px-4 py-3 text-right">
                   <span className="flex items-center justify-end gap-2">
-                    {row.status === 'active' && (
+                    {(row.status === 'active' || row.status === 'archived') && (
                       <Link
                         href={`/listings/${row.id}`}
                         className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
@@ -144,7 +161,19 @@ export function MyListingsTable({
                         <ExternalLink className="h-4 w-4" />
                       </Link>
                     )}
-                    {canDelete && (
+                    {row.status === 'active' && row.user_id === currentUserId && (
+                      <button
+                        type="button"
+                        onClick={() => handleArchive(row)}
+                        disabled={!!archivingId}
+                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700 disabled:opacity-50"
+                        title="Zakończ ogłoszenie"
+                      >
+                        {archivingId === row.id ? '…' : <Archive className="h-4 w-4" />}
+                        Zakończ
+                      </button>
+                    )}
+                    {isAdmin && (
                       <button
                         type="button"
                         onClick={() => handleDelete(row)}
