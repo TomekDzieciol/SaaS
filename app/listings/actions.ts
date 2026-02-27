@@ -67,13 +67,13 @@ export async function createListing(input: NewListingInput) {
   }
   const contactPhoneNormalized = contactPhoneDigits
 
-  const priceRaw = input.price?.toString().trim() ?? ''
-  const priceDigits = priceRaw.replace(/\D/g, '')
-  const priceNum = priceDigits === '' ? null : parseInt(priceDigits, 10)
-  if (priceRaw !== '' && (Number.isNaN(priceNum) || priceNum! < 0)) {
-    return { error: 'Cena musi być poprawną liczbą nieujemną.' }
+  const priceRaw = (input.price?.toString().trim() ?? '').replace(/\s/g, '').replace(',', '.')
+  const priceNum = priceRaw === '' ? null : parseFloat(priceRaw)
+  if (priceRaw !== '' && (Number.isNaN(priceNum!) || priceNum! < 0)) {
+    return { error: 'Cena musi być poprawną liczbą nieujemną (do dwóch miejsc po przecinku).' }
   }
-  let finalPrice: number | null = priceRaw === '' ? null : priceNum
+  let finalPrice: number | null =
+    priceNum == null ? null : Math.round(priceNum * 100) / 100
 
   const categoryId = input.category_id?.trim() || null
   let categoryIsFree = false
@@ -213,6 +213,102 @@ export async function activateListing(listingId: string, status: 'active' = 'act
   return { success: true }
 }
 
+export async function renewListing(listingId: string, publicationPeriodId: string) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: 'Musisz być zalogowany.' }
+  }
+
+  const { data: listing, error: fetchError } = await supabase
+    .from('listings')
+    .select('user_id, status, category_id')
+    .eq('id', listingId)
+    .single()
+
+  if (fetchError || !listing) {
+    return { error: 'Ogłoszenie nie istnieje lub nie masz do niego dostępu.' }
+  }
+
+  const isAdmin = isAdminEmail(user.email ?? undefined)
+  const isOwner = listing.user_id === user.id
+  if (!isAdmin && !isOwner) {
+    return { error: 'Brak uprawnień do odświeżenia tego ogłoszenia.' }
+  }
+
+  if (listing.status !== 'archived' && listing.status !== 'expired') {
+    return { error: 'Tylko archiwalne lub wygasłe ogłoszenia można odświeżyć.' }
+  }
+
+  const categoryId = listing.category_id
+  if (!categoryId) {
+    return { error: 'To ogłoszenie nie ma przypisanej kategorii, nie można obliczyć okresu publikacji.' }
+  }
+
+  const periodId = publicationPeriodId.trim()
+  if (!periodId) {
+    return { error: 'Wybierz okres publikacji.' }
+  }
+
+  const { data: cpp } = await supabase
+    .from('category_publication_periods')
+    .select('publication_period_id')
+    .eq('category_id', categoryId)
+    .eq('publication_period_id', periodId)
+    .maybeSingle()
+
+  if (!cpp) {
+    return { error: 'Wybrany okres publikacji nie jest dostępny w tej kategorii.' }
+  }
+
+  const { data: period } = await supabase
+    .from('publication_periods')
+    .select('days_count')
+    .eq('id', periodId)
+    .single()
+
+  if (period?.days_count == null) {
+    return { error: 'Wybrany okres publikacji nie jest dostępny.' }
+  }
+
+  const now = new Date()
+  const exp = new Date(now)
+  exp.setUTCDate(exp.getUTCDate() + period.days_count)
+  const arch = new Date(exp)
+  arch.setUTCDate(arch.getUTCDate() + 90)
+
+  let client = supabase
+  if (isAdmin && !isOwner) {
+    try {
+      client = createAdminClient()
+    } catch {
+      return { error: 'Konfiguracja administratora nie pozwala na odświeżenie cudzego ogłoszenia.' }
+    }
+  }
+
+  const { error: updateError } = await client
+    .from('listings')
+    .update({
+      status: 'active',
+      publication_period_id: periodId,
+      expires_at: exp.toISOString(),
+      archived_until: arch.toISOString(),
+    })
+    .eq('id', listingId)
+    .eq('user_id', listing.user_id)
+
+  if (updateError) {
+    return { error: updateError.message }
+  }
+
+  revalidatePath('/dashboard')
+  revalidatePath(`/listings/${listingId}`)
+  return { success: true }
+}
+
 export async function archiveListing(listingId: string) {
   const supabase = await createClient()
   const {
@@ -223,12 +319,37 @@ export async function archiveListing(listingId: string) {
     return { error: 'Musisz być zalogowany.' }
   }
 
+  const { data: listing, error: fetchError } = await supabase
+    .from('listings')
+    .select('user_id')
+    .eq('id', listingId)
+    .single()
+
+  if (fetchError || !listing) {
+    return { error: 'Ogłoszenie nie istnieje lub nie masz do niego dostępu.' }
+  }
+
+  const isAdmin = isAdminEmail(user.email ?? undefined)
+  const isOwner = listing.user_id === user.id
+  if (!isAdmin && !isOwner) {
+    return { error: 'Brak uprawnień do zakończenia tego ogłoszenia.' }
+  }
+
+  let client = supabase
+  if (isAdmin && !isOwner) {
+    try {
+      client = createAdminClient()
+    } catch {
+      return { error: 'Konfiguracja administratora nie pozwala na zakończenie cudzego ogłoszenia.' }
+    }
+  }
+
   const now = new Date().toISOString()
-  const { error } = await supabase
+  const { error } = await client
     .from('listings')
     .update({ status: 'archived', expires_at: now })
     .eq('id', listingId)
-    .eq('user_id', user.id)
+    .eq('user_id', listing.user_id)
 
   if (error) {
     return { error: error.message }

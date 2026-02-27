@@ -44,7 +44,7 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
         {listing.price != null && (
           <p className="mt-2 text-lg font-bold text-indigo-600 dark:text-indigo-400">
             {Number(listing.price).toLocaleString('pl-PL', {
-              minimumFractionDigits: 0,
+              minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             })}{' '}
             zł

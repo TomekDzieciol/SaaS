@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ExternalLink, Trash2, Archive } from 'lucide-react'
+import { ExternalLink, Trash2, Archive, RefreshCw } from 'lucide-react'
 import { deleteListing, archiveListing } from '@/app/listings/actions'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -46,7 +46,8 @@ export function MyListingsTable({
   const [error, setError] = useState<string | null>(null)
 
   async function handleArchive(row: ListingRow) {
-    if (row.user_id !== currentUserId || row.status !== 'active') return
+    const canArchive = row.status === 'active' && (row.user_id === currentUserId || isAdmin)
+    if (!canArchive) return
     if (!window.confirm('Czy na pewno chcesz zakończyć to ogłoszenie? Trafi do archiwum i nie będzie widoczne w wyszukiwarce.')) return
 
     setError(null)
@@ -130,7 +131,7 @@ export function MyListingsTable({
                 </td>
                 <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
                   {row.price != null
-                    ? `${Number(row.price).toLocaleString('pl-PL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} zł`
+                    ? `${Number(row.price).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`
                     : '–'}
                 </td>
                 <td className="px-4 py-3">
@@ -161,7 +162,17 @@ export function MyListingsTable({
                         <ExternalLink className="h-4 w-4" />
                       </Link>
                     )}
-                    {row.status === 'active' && row.user_id === currentUserId && (
+                    {(row.status === 'archived' || row.status === 'expired') && (row.user_id === currentUserId || isAdmin) && (
+                      <Link
+                        href={`/listings/${row.id}/renew`}
+                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
+                        title="Odśwież ogłoszenie – wybierz nowy okres publikacji i przywróć ogłoszenie"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        Odśwież ogłoszenie
+                      </Link>
+                    )}
+                    {row.status === 'active' && (row.user_id === currentUserId || isAdmin) && (
                       <button
                         type="button"
                         onClick={() => handleArchive(row)}

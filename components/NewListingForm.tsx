@@ -16,47 +16,82 @@ type DistrictRow = { id: string; region_id: string; name: string }
 
 export type CategoryPeriodOption = { id: string; label: string; days_count: number; price_cents: number }
 
+export type CloneInitialData = {
+  title: string
+  description: string
+  priceDisplay: string
+  location: string
+  contact_phone: string
+  categoryPath: string[]
+  region_id: string
+  district_id: string
+  filterValues: Record<string, string>
+  startAtStep2: boolean
+}
+
 export function NewListingForm({
   userId,
   categories,
   categoryPeriods,
+  initialData,
 }: {
   userId: string
   categories: CategoryRow[]
   categoryPeriods: Record<string, { periods: CategoryPeriodOption[]; defaultPeriodId: string | null }>
+  initialData?: CloneInitialData | null
 }) {
   const router = useRouter()
-  const [step, setStep] = useState<1 | 2>(1)
+  const [step, setStep] = useState<1 | 2>(initialData?.startAtStep2 ? 2 : 1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [imageFiles, setImageFiles] = useState<(File | null)[]>(Array(MAX_IMAGES).fill(null))
-  const [categoryPath, setCategoryPath] = useState<string[]>([])
+  const [categoryPath, setCategoryPath] = useState<string[]>(initialData?.categoryPath ?? [])
   const categoryId = categoryPath.length > 0 ? categoryPath[categoryPath.length - 1] : ''
   const [periodId, setPeriodId] = useState<string>('')
   const [filters, setFilters] = useState<FilterWithOptions[]>([])
-  const [priceDisplay, setPriceDisplay] = useState<string>('')
-  const [description, setDescription] = useState<string>('')
+  const [priceDisplay, setPriceDisplay] = useState<string>(initialData?.priceDisplay ?? '')
+  const [description, setDescription] = useState<string>(initialData?.description ?? '')
   const [isTagging, setIsTagging] = useState(false)
   const [aiTags, setAiTags] = useState<string[]>([])
   const aiTagsRef = useRef<string[]>([])
   const [regions, setRegions] = useState<RegionRow[]>([])
   const [districts, setDistricts] = useState<DistrictRow[]>([])
-  const [regionId, setRegionId] = useState<string>('')
-  const [districtId, setDistrictId] = useState<string>('')
+  const [regionId, setRegionId] = useState<string>(initialData?.region_id ?? '')
+  const [districtId, setDistrictId] = useState<string>(initialData?.district_id ?? '')
 
   const selectedCategory = categories.find((c) => c.id === categoryId)
   const selectedCategoryIsFree = selectedCategory?.is_free ?? false
   const periodsForCategory = categoryId ? categoryPeriods[categoryId]?.periods ?? [] : []
   const defaultPeriodIdForCategory = categoryId ? categoryPeriods[categoryId]?.defaultPeriodId ?? null : null
 
-  function formatPriceWithSpaces(value: string): string {
-    const digits = value.replace(/\D/g, '')
-    if (digits === '') return ''
-    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+  /** Formatuje cenę w konwencji polskiej: część całkowita ze spacjami, przecinek, max 2 miejsca po przecinku. */
+  function formatPriceWithDecimals(value: string): string {
+    const normalized = value.replace(/[^\d,]/g, '')
+    const commaIndex = normalized.indexOf(',')
+    let intPart: string
+    let decPart: string
+    if (commaIndex === -1) {
+      intPart = normalized
+      decPart = ''
+    } else {
+      intPart = normalized.slice(0, commaIndex)
+      decPart = normalized.slice(commaIndex + 1).replace(/\D/g, '').slice(0, 2)
+    }
+    const formattedInt = intPart === '' ? '' : intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+    return commaIndex !== -1 ? `${formattedInt},${decPart}` : formattedInt
+  }
+
+  /** Parsuje wyświetlaną cenę (np. "1 234,56") do liczby lub null. */
+  function parsePriceDisplay(display: string): number | null {
+    const normalized = display.replace(/\s/g, '').replace(',', '.')
+    if (normalized === '' || normalized === '.') return null
+    const num = parseFloat(normalized)
+    if (Number.isNaN(num) || num < 0) return null
+    return Math.round(num * 100) / 100
   }
 
   function handlePriceChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setPriceDisplay(formatPriceWithSpaces(e.target.value))
+    setPriceDisplay(formatPriceWithDecimals(e.target.value))
   }
 
   useEffect(() => {
@@ -103,7 +138,7 @@ export function NewListingForm({
 
   useEffect(() => {
     if (selectedCategoryIsFree) {
-      setPriceDisplay('0')
+      setPriceDisplay('0,00')
     } else {
       setPriceDisplay('')
     }
@@ -186,8 +221,8 @@ export function NewListingForm({
       return { filter_id: f.id, value: val || null, option_id: null }
     })
 
-    const priceCleaned = priceDisplay.replace(/\D/g, '')
-    if (!selectedCategoryIsFree && (priceCleaned === '' || priceCleaned === '0')) {
+    const priceNum = parsePriceDisplay(priceDisplay)
+    if (!selectedCategoryIsFree && (priceNum === null || priceNum === 0)) {
       setError('W tej kategorii cena musi być większa od zera.')
       setLoading(false)
       return
@@ -196,7 +231,7 @@ export function NewListingForm({
     const result = await createListing({
       title: (formData.get('title') as string) ?? '',
       description: description.trim(),
-      price: priceCleaned,
+      price: priceNum !== null ? String(priceNum) : '0',
       location: (formData.get('location') as string) ?? '',
       region_id: regionId || null,
       district_id: districtId || null,
@@ -269,8 +304,8 @@ export function NewListingForm({
       setError('Wybierz kategorię (końcową podkategorię).')
       return
     }
-    const priceCleaned = priceDisplay.replace(/\D/g, '')
-    if (!selectedCategoryIsFree && (priceCleaned === '' || priceCleaned === '0')) {
+    const priceNum = parsePriceDisplay(priceDisplay)
+    if (!selectedCategoryIsFree && (priceNum === null || priceNum === 0)) {
       setError('W tej kategorii cena musi być większa od zera.')
       return
     }
@@ -317,6 +352,7 @@ export function NewListingForm({
           required
           maxLength={200}
           className={inputClass}
+          defaultValue={initialData?.title}
         />
       </div>
 
@@ -399,8 +435,8 @@ export function NewListingForm({
           id="price"
           name="price"
           type="text"
-          inputMode="numeric"
-          placeholder={selectedCategoryIsFree ? '' : 'np. 150 000'}
+          inputMode="decimal"
+          placeholder={selectedCategoryIsFree ? '' : 'np. 1 234,56'}
           value={priceDisplay}
           onChange={handlePriceChange}
           disabled={selectedCategoryIsFree}
@@ -408,8 +444,8 @@ export function NewListingForm({
         />
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
           {selectedCategoryIsFree
-            ? 'Cena ustawiona na 0 zł (kategoria darmowa).'
-            : 'Możesz wpisać np. 150 000 zł — spacje są dodawane automatycznie.'}
+            ? 'Cena ustawiona na 0,00 zł (kategoria darmowa).'
+            : 'Do dwóch miejsc po przecinku, np. 120,00 lub 1 234,56 zł.'}
         </p>
         {selectedCategoryIsFree && (
           <p className="mt-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
@@ -429,7 +465,12 @@ export function NewListingForm({
                 {f.name}
               </label>
               {f.type === 'select' && (
-                <select id={`filter_${f.id}`} name={`filter_${f.id}`} className={inputClass}>
+                <select
+                  id={`filter_${f.id}`}
+                  name={`filter_${f.id}`}
+                  className={inputClass}
+                  defaultValue={initialData?.filterValues?.[f.id]}
+                >
                   <option value="">— Wybierz —</option>
                   {f.options.map((opt) => (
                     <option key={opt.id} value={opt.id}>
@@ -445,6 +486,7 @@ export function NewListingForm({
                   type="number"
                   inputMode="numeric"
                   className={inputClass}
+                  defaultValue={initialData?.filterValues?.[f.id]}
                 />
               )}
               {f.type === 'text' && (
@@ -453,6 +495,7 @@ export function NewListingForm({
                   name={`filter_${f.id}`}
                   type="text"
                   className={inputClass}
+                  defaultValue={initialData?.filterValues?.[f.id]}
                 />
               )}
             </div>
@@ -509,6 +552,7 @@ export function NewListingForm({
             type="text"
             placeholder="np. Warszawa"
             className={inputClass}
+            defaultValue={initialData?.location}
           />
         </div>
       </div>
@@ -528,6 +572,7 @@ export function NewListingForm({
           maxLength={13}
           inputMode="numeric"
           autoComplete="tel"
+          defaultValue={initialData?.contact_phone}
         />
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
           9 cyfr, spacje są dozwolone.
