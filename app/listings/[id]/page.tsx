@@ -84,7 +84,7 @@ export default async function ListingDetailPage({
             </div>
             {imageUrls.length > 1 && (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {imageUrls.slice(1, 6).map((url, i) => (
+                {imageUrls.slice(1, 6).map((url: string, i: number) => (
                   <div
                     key={i}
                     className="aspect-[4/3] overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800"
