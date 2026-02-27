@@ -118,6 +118,17 @@ export async function createListing(input: NewListingInput) {
   if (!periodId) {
     return { error: 'Wybierz okres publikacji.' }
   }
+
+  let contactEmail: string | null = null
+  const { data: userSettings } = await supabase
+    .from('user_settings')
+    .select('contact_email')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (userSettings?.contact_email?.trim()) {
+    contactEmail = userSettings.contact_email.trim()
+  }
+
   if (categoryId) {
     const { data: cpp } = await supabase
       .from('category_publication_periods')
@@ -161,6 +172,7 @@ export async function createListing(input: NewListingInput) {
     region_id: regionId,
     district_id: districtId,
     contact_phone: contactPhoneNormalized,
+    contact_email: contactEmail,
     images,
     tags,
     status: 'pending_payment',

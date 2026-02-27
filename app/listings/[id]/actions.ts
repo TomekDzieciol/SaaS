@@ -2,16 +2,16 @@
 
 import { createClient } from '@/lib/supabase/server'
 
-export async function revealListingPhone(
+export async function revealListingContact(
   listingId: string
-): Promise<{ phone?: string; error?: string }> {
+): Promise<{ phone?: string; email?: string; error?: string }> {
   if (!listingId?.trim()) {
     return { error: 'Brak identyfikatora ogłoszenia.' }
   }
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('listings')
-    .select('contact_phone')
+    .select('contact_phone, contact_email')
     .eq('id', listingId.trim())
     .single()
 
@@ -20,9 +20,10 @@ export async function revealListingPhone(
   }
 
   const phone = (data.contact_phone ?? '').trim()
-  if (!phone) {
-    return { error: 'Brak podanego telefonu.' }
+  const email = (data.contact_email ?? '').trim()
+  if (!phone && !email) {
+    return { error: 'Brak podanych danych kontaktowych.' }
   }
 
-  return { phone }
+  return { phone: phone || undefined, email: email || undefined }
 }

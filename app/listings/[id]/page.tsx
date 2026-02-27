@@ -45,7 +45,7 @@ export default async function ListingDetailPage({
   const supabase = await createClient()
   const { data: listing, error } = await supabase
     .from('listings')
-    .select('id, title, description, price, location, contact_phone, images, status, created_at')
+    .select('id, title, description, price, location, contact_phone, contact_email, images, status, created_at')
     .eq('id', params.id)
     .single()
 
@@ -156,6 +156,7 @@ export default async function ListingDetailPage({
               <ContactReveal
                 listingId={listing.id}
                 hasPhone={!!(listing.contact_phone ?? '').trim()}
+                hasEmail={!!(listing.contact_email ?? '').trim()}
               />
             </div>
           )}
