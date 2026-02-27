@@ -55,8 +55,10 @@ export default async function ListingDetailPage({
   const isArchived = listing.status === 'archived'
 
   const imageUrls = (listing.images ?? []).filter(
-    (url): url is string => Boolean(url) && url.startsWith('http')
-  )
+    (url: unknown): url is string => 
+      typeof url === 'string' && url.startsWith('http')
+  );
+
   const firstImageUrl = imageUrls[0] ?? null
 
   return (
