@@ -399,6 +399,51 @@ export async function updateListingImages(listingId: string, imageUrls: string[]
   return { success: true }
 }
 
+/** Upload plików zdjęć do Storage po stronie serwera. Zwraca tablicę publicznych URLi. */
+export async function uploadListingImages(formData: FormData) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: 'Musisz być zalogowany.', urls: null }
+  }
+
+  const listingId = formData.get('listingId')
+  if (typeof listingId !== 'string' || !listingId.trim()) {
+    return { error: 'Brak identyfikatora ogłoszenia.', urls: null }
+  }
+
+  const { data: listing, error: fetchError } = await supabase
+    .from('listings')
+    .select('user_id')
+    .eq('id', listingId.trim())
+    .single()
+
+  if (fetchError || !listing || listing.user_id !== user.id) {
+    return { error: 'Ogłoszenie nie istnieje lub brak uprawnień.', urls: null }
+  }
+
+  const urls: string[] = Array(6).fill('')
+  for (let i = 0; i < 6; i++) {
+    const entry = formData.get(`file_${i}`)
+    if (!(entry instanceof File) || entry.size === 0) continue
+    const ext = entry.name.split('.').pop()?.toLowerCase() || 'jpg'
+    const path = `${user.id}/${listingId.trim()}/${i}.${ext}`
+    const { error: uploadError } = await supabase.storage
+      .from(LISTING_IMAGES_BUCKET)
+      .upload(path, entry, { contentType: entry.type, upsert: true })
+    if (uploadError) {
+      return { error: `Błąd uploadu zdjęcia ${i + 1}: ${uploadError.message}`, urls: null }
+    }
+    const { data: urlData } = supabase.storage.from(LISTING_IMAGES_BUCKET).getPublicUrl(path)
+    urls[i] = urlData.publicUrl
+  }
+
+  return { urls, error: null }
+}
+
 export async function deleteListing(listingId: string) {
   const supabase = await createClient()
   const {

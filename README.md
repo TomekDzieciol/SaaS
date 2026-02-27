@@ -22,9 +22,9 @@ Fundament profesjonalnej aplikacji SaaS z pełnym systemem uwierzytelniania (Nex
    cp .env.local.example .env.local
    ```
 
-3. Uzupełnij w `.env.local`:
-   - `NEXT_PUBLIC_SUPABASE_URL` – URL projektu z [Supabase Dashboard](https://supabase.com/dashboard) → Settings → API
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` – klucz anon (public)
+3. Uzupełnij w `.env.local` (zmienne tylko serwerowe – nie trafiają do kodu w przeglądarce):
+   - `SUPABASE_URL` – URL projektu z [Supabase Dashboard](https://supabase.com/dashboard) → Settings → API
+   - `SUPABASE_ANON_KEY` – klucz anon (używany wyłącznie na serwerze)
 
 4. W Supabase włącz **Email** i **Google** w Authentication → Providers.
 

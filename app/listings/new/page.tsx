@@ -76,6 +76,21 @@ export default async function NewListingPage({
     }
   }
 
+  const { data: regions } = await supabase
+    .from('regions')
+    .select('id, name')
+    .order('name')
+  const { data: districtsRows } = await supabase
+    .from('districts')
+    .select('id, region_id, name')
+    .order('name')
+  const districtsByRegion: Record<string, { id: string; region_id: string; name: string }[]> = {}
+  for (const d of districtsRows ?? []) {
+    const list = districtsByRegion[d.region_id] ?? []
+    list.push(d)
+    districtsByRegion[d.region_id] = list
+  }
+
   if (cloneId?.trim()) {
     const { data: listing, error: listingError } = await supabase
       .from('listings')
@@ -131,6 +146,8 @@ export default async function NewListingPage({
         userId={user.id}
         categories={flat}
         categoryPeriods={categoryPeriods}
+        regions={regions ?? []}
+        districtsByRegion={districtsByRegion}
         initialData={initialData}
       />
     </div>

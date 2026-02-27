@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { LogIn, LogOut, LayoutDashboard, User, PlusSquare, FolderTree, Filter } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { signOutAction } from '@/app/auth/actions'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 
 function isAdminEmail(email: string | undefined): boolean {
@@ -17,8 +17,7 @@ export function Nav({ user }: { user: SupabaseUser | null }) {
   const isAdmin = user ? isAdminEmail(user.email ?? undefined) : false
 
   async function handleSignOut() {
-    const supabase = createClient()
-    await supabase.auth.signOut()
+    await signOutAction()
     router.push('/')
     router.refresh()
   }

@@ -2,13 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { createListing, updateListingImages, analyzeImageTags } from '@/app/listings/actions'
+import { createListing, updateListingImages, uploadListingImages, analyzeImageTags } from '@/app/listings/actions'
 import { getFiltersForCategory, type FilterWithOptions } from '@/app/listings/getFiltersForCategory'
 import { ImagePlus, Loader2 } from 'lucide-react'
 
 const MAX_IMAGES = 6
-const BUCKET = 'listing-images'
 
 type CategoryRow = { id: string; name: string; parent_id: string | null; is_free: boolean; default_period_id: string | null }
 type RegionRow = { id: string; name: string }
@@ -33,11 +31,15 @@ export function NewListingForm({
   userId,
   categories,
   categoryPeriods,
+  regions: regionsProp,
+  districtsByRegion,
   initialData,
 }: {
   userId: string
   categories: CategoryRow[]
   categoryPeriods: Record<string, { periods: CategoryPeriodOption[]; defaultPeriodId: string | null }>
+  regions: RegionRow[]
+  districtsByRegion: Record<string, DistrictRow[]>
   initialData?: CloneInitialData | null
 }) {
   const router = useRouter()
@@ -54,9 +56,8 @@ export function NewListingForm({
   const [isTagging, setIsTagging] = useState(false)
   const [aiTags, setAiTags] = useState<string[]>([])
   const aiTagsRef = useRef<string[]>([])
-  const [regions, setRegions] = useState<RegionRow[]>([])
-  const [districts, setDistricts] = useState<DistrictRow[]>([])
   const [regionId, setRegionId] = useState<string>(initialData?.region_id ?? '')
+  const districts = regionId ? (districtsByRegion[regionId] ?? []) : []
   const [districtId, setDistrictId] = useState<string>(initialData?.district_id ?? '')
   const [title, setTitle] = useState<string>(initialData?.title ?? '')
   const [suggestingCategory, setSuggestingCategory] = useState(false)
@@ -110,34 +111,8 @@ export function NewListingForm({
     return () => { cancelled = true }
   }, [categoryId])
 
-  const supabase = createClient()
-  useEffect(() => {
-    let cancelled = false
-    supabase
-      .from('regions')
-      .select('id, name')
-      .order('name')
-      .then(({ data }) => {
-        if (!cancelled && data) setRegions(data as RegionRow[])
-      })
-    return () => { cancelled = true }
-  }, [])
   useEffect(() => {
     setDistrictId('')
-    if (!regionId) {
-      setDistricts([])
-      return
-    }
-    let cancelled = false
-    supabase
-      .from('districts')
-      .select('id, region_id, name')
-      .eq('region_id', regionId)
-      .order('name')
-      .then(({ data }) => {
-        if (!cancelled && data) setDistricts(data as DistrictRow[])
-      })
-    return () => { cancelled = true }
   }, [regionId])
 
   useEffect(() => {
@@ -264,32 +239,21 @@ export function NewListingForm({
       return
     }
 
-    const urls: string[] = []
-    const filesToUpload = imageFiles.filter((f): f is File => f != null)
-
-    for (let i = 0; i < filesToUpload.length; i++) {
-      const file = filesToUpload[i]
-      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-      const path = `${userId}/${result.id}/${i}.${ext}`
-
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, file, {
-          contentType: file.type,
-          upsert: true,
-        })
-
-      if (uploadError) {
-        setError(`Błąd uploadu zdjęcia ${i + 1}: ${uploadError.message}`)
-        setLoading(false)
-        return
+    const uploadFormData = new FormData()
+    uploadFormData.append('listingId', result.id)
+    for (let i = 0; i < MAX_IMAGES; i++) {
+      const file = imageFiles[i]
+      if (file instanceof File && file.size > 0) {
+        uploadFormData.append(`file_${i}`, file)
       }
-
-      const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path)
-      urls.push(urlData.publicUrl)
     }
-
-    const updateResult = await updateListingImages(result.id, urls)
+    const uploadResult = await uploadListingImages(uploadFormData)
+    if (uploadResult.error || !uploadResult.urls) {
+      setError(uploadResult.error ?? 'Błąd uploadu zdjęć.')
+      setLoading(false)
+      return
+    }
+    const updateResult = await updateListingImages(result.id, uploadResult.urls)
     if (updateResult.error) {
       setError(updateResult.error)
       setLoading(false)
@@ -600,7 +564,7 @@ export function NewListingForm({
             className={inputClass}
           >
             <option value="">— Wybierz województwo —</option>
-            {regions.map((r) => (
+            {regionsProp.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name}
               </option>

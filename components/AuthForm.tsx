@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { signInAction, signUpAction } from '@/app/auth/actions'
 import { Loader2 } from 'lucide-react'
 
 type Mode = 'login' | 'signup'
@@ -20,23 +20,21 @@ export function AuthForm({
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
 
-  const supabase = createClient()
-
   async function handleEmailSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
     try {
       if (mode === 'signup') {
-        const { error } = await supabase.auth.signUp({ email, password })
-        if (error) throw error
+        const result = await signUpAction(email, password)
+        if (result.error) throw new Error(result.error)
         setMessage({
           type: 'success',
           text: 'Sprawdź skrzynkę – wysłaliśmy link do potwierdzenia.',
         })
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
-        if (error) throw error
+        const result = await signInAction(email, password)
+        if (result.error) throw new Error(result.error)
         router.push(redirectTo)
         router.refresh()
         return
@@ -55,17 +53,18 @@ export function AuthForm({
     setLoading(true)
     setMessage(null)
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTo)}`,
-        },
+      const res = await fetch('/api/auth/oauth-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ redirectTo }),
       })
-      if (error) throw error
-      if (data?.url) {
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Błąd OAuth')
+      if (data.url) {
         window.location.href = data.url
         return
       }
+      throw new Error('Brak URL do przekierowania')
     } catch (err: unknown) {
       setMessage({
         type: 'error',
