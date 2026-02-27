@@ -86,6 +86,14 @@ export async function createListing(input: NewListingInput) {
     if (!category || !category.is_active || category.deleted_at) {
       return { error: 'Wybrana kategoria nie jest dostępna.' }
     }
+    const { data: children } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('parent_id', categoryId)
+      .limit(1)
+    if (children && children.length > 0) {
+      return { error: 'Wystawianie dozwolone tylko w kategorii końcowej. Wybierz najgłębszą podkategorię.' }
+    }
     categoryIsFree = category.is_free ?? false
   }
 
@@ -449,7 +457,7 @@ export async function deleteListing(listingId: string) {
 }
 
 const ANALYZE_IMAGE_SYSTEM_PROMPT =
-  'Jesteś ekspertem od e-commerce. Przeanalizuj to zdjęcie i zwróć dokładnie dwa najważniejsze słowa kluczowe (tagi), które najlepiej opisują przedmiot. Zwróć tylko te dwa słowa oddzielone przecinkiem, bez dodatkowego tekstu.'
+  'Jesteś ekspertem od e-commerce. Przeanalizuj to zdjęcie i zwróć dokładnie cztery najważniejsze słowa kluczowe (tagi), które najlepiej opisują przedmiot. Zwróć tylko te cztery słowa oddzielone przecinkiem, bez dodatkowego tekstu.'
 
 export async function analyzeImageTags(image: { url?: string; base64?: string }) {
   console.log('DEBUG ENV:', process.env.NODE_ENV)
@@ -502,7 +510,7 @@ export async function analyzeImageTags(image: { url?: string; base64?: string })
 
     const raw = completion.choices[0]?.message?.content?.trim()
     console.log('AI zwróciło:', completion.choices[0]?.message?.content)
-    const result = { tags: raw ? raw.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 2) : [] }
+    const result = { tags: raw ? raw.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 4) : [] }
     if (!raw) return { error: 'Brak odpowiedzi od modelu', tags: [] }
     return result
   } catch (err) {

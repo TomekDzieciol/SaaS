@@ -58,6 +58,10 @@ export function NewListingForm({
   const [districts, setDistricts] = useState<DistrictRow[]>([])
   const [regionId, setRegionId] = useState<string>(initialData?.region_id ?? '')
   const [districtId, setDistrictId] = useState<string>(initialData?.district_id ?? '')
+  const [title, setTitle] = useState<string>(initialData?.title ?? '')
+  const [suggestingCategory, setSuggestingCategory] = useState(false)
+  const suggestCategoryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const suggestCategoryAbortRef = useRef<AbortController | null>(null)
 
   const selectedCategory = categories.find((c) => c.id === categoryId)
   const selectedCategoryIsFree = selectedCategory?.is_free ?? false
@@ -221,6 +225,11 @@ export function NewListingForm({
       return { filter_id: f.id, value: val || null, option_id: null }
     })
 
+    if (categoryId && categories.some((c) => c.parent_id === categoryId)) {
+      setError('Wystawianie dozwolone tylko w kategorii końcowej. Wybierz najgłębszą podkategorię.')
+      setLoading(false)
+      return
+    }
     const priceNum = parsePriceDisplay(priceDisplay)
     if (!selectedCategoryIsFree && (priceNum === null || priceNum === 0)) {
       setError('W tej kategorii cena musi być większa od zera.')
@@ -294,14 +303,19 @@ export function NewListingForm({
 
   function handleNextStep() {
     setError(null)
-    const form = document.getElementById('new-listing-form') as HTMLFormElement | null
-    const title = (form?.elements.namedItem('title') as HTMLInputElement | null)?.value?.trim()
-    if (!title) {
+    const titleToCheck = title.trim()
+    if (!titleToCheck) {
       setError('Wpisz tytuł ogłoszenia.')
       return
     }
+    const form = document.getElementById('new-listing-form') as HTMLFormElement | null
     if (!categoryId) {
       setError('Wybierz kategorię (końcową podkategorię).')
+      return
+    }
+    const hasSubcategories = categories.some((c) => c.parent_id === categoryId)
+    if (hasSubcategories) {
+      setError('Wystawianie dozwolone tylko w kategorii końcowej. Wybierz najgłębszą podkategorię.')
       return
     }
     const priceNum = parsePriceDisplay(priceDisplay)
@@ -313,7 +327,7 @@ export function NewListingForm({
       setError('Brak dostępnych okresów publikacji dla tej kategorii.')
       return
     }
-    const contactPhone = (form?.elements.namedItem('contact_phone') as HTMLInputElement | null)?.value?.trim() ?? ''
+    const contactPhone = (form?.elements?.namedItem('contact_phone') as HTMLInputElement | null)?.value?.trim() ?? ''
     const phoneDigits = contactPhone.replace(/\D/g, '')
     if (phoneDigits.length !== 9) {
       setError('Telefon kontaktowy jest wymagany i musi składać się z 9 cyfr (spacje są dozwolone).')
@@ -338,6 +352,70 @@ export function NewListingForm({
     )
   }
 
+  useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7712/ingest/7acbae1d-934d-41a8-b7c5-3dfd1fafecd0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'80925f'},body:JSON.stringify({sessionId:'80925f',location:'NewListingForm.tsx:useEffect',message:'suggest-category effect ran',data:{step,titleLen:title.trim().length,willReturnEarly:step!==1||title.trim().length<2},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    if (step !== 1) return
+    const t = title.trim()
+    if (t.length < 2) return
+    if (suggestCategoryTimerRef.current) {
+      clearTimeout(suggestCategoryTimerRef.current)
+      suggestCategoryTimerRef.current = null
+    }
+    suggestCategoryTimerRef.current = setTimeout(() => {
+      suggestCategoryTimerRef.current = null
+      // #region agent log
+      fetch('http://127.0.0.1:7712/ingest/7acbae1d-934d-41a8-b7c5-3dfd1fafecd0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'80925f'},body:JSON.stringify({sessionId:'80925f',location:'NewListingForm.tsx:setTimeout',message:'suggest-category fetch starting',data:{titleLen:t.length},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      if (suggestCategoryAbortRef.current) {
+        suggestCategoryAbortRef.current.abort()
+      }
+      const ac = new AbortController()
+      suggestCategoryAbortRef.current = ac
+      setSuggestingCategory(true)
+      fetch('/api/suggest-category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: t }),
+        signal: ac.signal,
+      })
+        .then((res) => {
+          // #region agent log
+          fetch('http://127.0.0.1:7712/ingest/7acbae1d-934d-41a8-b7c5-3dfd1fafecd0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'80925f'},body:JSON.stringify({sessionId:'80925f',location:'NewListingForm.tsx:fetch.then',message:'suggest-category response',data:{status:res.status,ok:res.ok},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
+          return res.json()
+        })
+        .then((data) => {
+          const hasPath = data.categoryPath && Array.isArray(data.categoryPath) && data.categoryPath.length > 0
+          // #region agent log
+          fetch('http://127.0.0.1:7712/ingest/7acbae1d-934d-41a8-b7c5-3dfd1fafecd0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'80925f'},body:JSON.stringify({sessionId:'80925f',location:'NewListingForm.tsx:data.then',message:'suggest-category data',data:{hasError:!!data.error,categoryPathLen:Array.isArray(data.categoryPath)?data.categoryPath.length:-1,willSetCategoryPath:hasPath},timestamp:Date.now(),hypothesisId:'D,E'})}).catch(()=>{});
+          // #endregion
+          if (ac.signal.aborted) return
+          if (hasPath) {
+            setCategoryPath(data.categoryPath)
+          }
+        })
+        .catch((err) => {
+          if (err?.name === 'AbortError') return
+          console.error('[suggest-category]', err)
+        })
+        .finally(() => {
+          if (!ac.signal.aborted) setSuggestingCategory(false)
+          if (suggestCategoryAbortRef.current === ac) suggestCategoryAbortRef.current = null
+        })
+    }, 800)
+    return () => {
+      if (suggestCategoryTimerRef.current) {
+        clearTimeout(suggestCategoryTimerRef.current)
+        suggestCategoryTimerRef.current = null
+      }
+      if (suggestCategoryAbortRef.current) {
+        suggestCategoryAbortRef.current.abort()
+      }
+    }
+  }, [step, title])
+
   return (
     <form id="new-listing-form" onSubmit={handleSubmit} className="mt-8 space-y-6">
       <div className={step === 2 ? 'hidden' : undefined}>
@@ -352,7 +430,8 @@ export function NewListingForm({
           required
           maxLength={200}
           className={inputClass}
-          defaultValue={initialData?.title}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
         />
       </div>
 
@@ -378,6 +457,11 @@ export function NewListingForm({
       <div className="space-y-4">
         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
           Kategoria
+          {suggestingCategory && (
+            <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
+              Sugerowanie kategorii…
+            </span>
+          )}
         </label>
         <div>
           <label htmlFor="category_main" className="block text-xs font-medium text-slate-500 dark:text-slate-400">
