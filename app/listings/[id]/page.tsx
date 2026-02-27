@@ -1,8 +1,9 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { MapPin, Phone, ArrowLeft, Camera } from 'lucide-react'
+import { MapPin, ArrowLeft, Camera } from 'lucide-react'
 import type { Metadata } from 'next'
+import { ContactReveal } from './ContactReveal'
 
 export async function generateMetadata({
   params,
@@ -152,19 +153,10 @@ export default async function ListingDetailPage({
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Dane kontaktowe sprzedającego
               </h2>
-              {listing.contact_phone ? (
-                <a
-                  href={`tel:${listing.contact_phone.replace(/\s/g, '')}`}
-                  className="mt-3 flex items-center gap-3 text-lg font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
-                >
-                  <Phone className="h-5 w-5" />
-                  {listing.contact_phone}
-                </a>
-              ) : (
-                <p className="mt-3 text-slate-500 dark:text-slate-400">
-                  Brak podanego telefonu.
-                </p>
-              )}
+              <ContactReveal
+                listingId={listing.id}
+                hasPhone={!!(listing.contact_phone ?? '').trim()}
+              />
             </div>
           )}
         </div>
